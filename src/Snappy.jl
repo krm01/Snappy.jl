@@ -13,28 +13,29 @@ include("internal.jl")
 using Juno
 
 function compress(input::Vector{UInt8})
-    sourcelen = length(input)
+    local sourcelen::UInt32
     try
-        sourcelen = convert(UInt32, sourcelen)
-    catch e
+        sourcelen = convert(UInt32, length(input))
+    catch e::InexactError
         error("input too large.")
     end
+
     # preallocate the output buffer, and resize down afterwards. faster than vcat'ing dynamic arrays
     output = Vector{UInt8}(maxlength_compressed(sourcelen))
-    # TODO: REMOVE this when everything works, just helpful for debugging!
-    fill!(output, 0xff)
     outputindex = encode32!(output, 1, sourcelen)
     table = alloc_hashtable(sourcelen)
     for i in 1:K_BLOCK_SIZE+1:sourcelen
         fill!(table, 0)
-        inputv = @view input[i:min(i+K_BLOCK_SIZE, end)]
+        # TODO for some reason it's faster to copy than use a view
+        # inputv = @view input[i:min(i+K_BLOCK_SIZE, end)]
+        inputv = input[i:min(i+K_BLOCK_SIZE, end)]
         outputindex = compress_fragment!(inputv, output, outputindex, table)
     end
     return resize!(output, outputindex-1)
 end
 
 
-function maxlength_compressed(sourcelen::Integer)
+function maxlength_compressed(sourcelen)
     # so sayeth the Google
     return 32 + sourcelen + (sourcelen ÷ 6)
 end
