@@ -21,7 +21,7 @@ Base.done(S::Skip32, state) = state > S.stop
 load32u(x) = reinterpret(UInt32, x)[1]
 load64u(x) = reinterpret(UInt64, x)[1]
 hashdword(bytes::UInt32, shift::UInt32) = (bytes * 0x1e35a7bd) >> shift
-log2floor(n::UInt32) = n == 0 ? -1 : 31 $ leading_zeros(n)
+log2floor(n::UInt32) = n == 0 ? -1 : 31 ⊻ leading_zeros(n)
 
 function alloc_hashtable(n)
     htsize = 256
@@ -33,8 +33,7 @@ end
 
 function compress_fragment!(vinput, output, outputindex, table)
     local shift::UInt32 = 32 - log2floor(length(table) % UInt32)
-    ip = next_emit = base_ip = 1
-    candidate = ip
+    ip = candidate = next_emit = base_ip = 1
     ip_limit = length(vinput) - K_INPUT_MARGIN_BYTES
     if length(vinput) >= K_INPUT_MARGIN_BYTES
         while true
@@ -48,7 +47,6 @@ function compress_fragment!(vinput, output, outputindex, table)
                 if load32u(vinput[candidate:candidate+3]) == load32u(vinput[i:i+3])
                     matchfound = true
                     outputindex = emit_literal!(output, outputindex, vinput[next_emit:i-1])
-                    #@show "L", output[1:outputindex]
                     break
                 end
             end
@@ -56,14 +54,10 @@ function compress_fragment!(vinput, output, outputindex, table)
             while matchfound
                 matched = 4 + find_match_length(@view(vinput[candidate+4:end]), @view(vinput[ip+4:end]))
                 outputindex = emit_copy!(output, outputindex, ip - candidate, matched)
-                #@show "C", output[1:outputindex]
                 ip += matched
                 next_emit = ip
-                # @show String(vinput[candidate+4:end])
-                # @show String(vinput[ip+4:end])
-                # @show matched
+
                 # potential early exit
-                # @show ip, ip_limit, (ip >= ip_limit)
                 (ip >= ip_limit) && break
 
                 input_bytes = load64u(vinput[ip-1:ip+6])
@@ -81,7 +75,6 @@ function compress_fragment!(vinput, output, outputindex, table)
     if next_emit < length(vinput)
         outputindex = emit_literal!(output, outputindex, vinput[next_emit:end])
     end
-    # @show "F", output[1:outputindex]
     return outputindex
 end
 
@@ -101,8 +94,7 @@ function emit_literal!(output, outputindex, literal)
         output[base] = SNAPPY_LITERAL | (((59+count) << 2) % UInt8)
     end
     # TODO: change to unsafe_copy!
-    # @show length(output), outputindex, length(literal), len
-    copy!(output, outputindex+=1, literal, 1, len)
+    unsafe_copy!(output, outputindex+=1, literal, 1, len)
     return outputindex + len
 end
 
@@ -143,7 +135,7 @@ function find_match_length(s1::AbstractArray, s2::AbstractArray)
     len = min(length(s1), length(s2))
     for i in 1:8:len-8
         a1, a2 = load64u(s1[i:i+7]), load64u(s2[i:i+7])
-        matched_bytes = (trailing_zeros(a1 $ a2) >> 3)
+        matched_bytes = (trailing_zeros(a1 ⊻ a2) >> 3)
         matched += matched_bytes
         (a1 != a2) && break
     end
