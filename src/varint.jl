@@ -1,27 +1,29 @@
 
 const global K_MAX32 = 5
 
-
 """
-    parse32(buf::Vector{UInt8}, offset::Int)
+    parse32(buf::Vector{UInt8}, offset::UInt)
 
-Reads and returns a varint32 from `buf` starting from `offset`. Raises
-an Error if no varint van be parsed.
+Reads and returns a varint32 from `buf`. Raises an error if no varint
+can be parsed.
+RETURNS: (varint, nBytesRead)
 """
-function parse32(buf::Vector{UInt8}, offset::Int)
-    local b::UInt8 = buf[offset]
-    local result::UInt32 = b & 127
-    offset += 1
+function parse32(buf::Vector{UInt8})
+    local b::UInt32 = convert(UInt32, buf[1])
+    local result::UInt32 = b & 0x7f
+    (b < 0x80) && return (result, 1)
 
-    if (b < 128) return result end
-    b = buf[offset]; offset += 1; result |= (b & 127) << 7
-    if (b < 128) return result end
-    b = buf[offset]; offset += 1; result |= (b & 127) << 14
-    if (b < 128) return result end
-    b = buf[offset]; offset += 1; result |= (b & 127) << 21
-    if (b < 128) return result end
-    b = buf[offset]; offset += 1; result |= (b & 127) << 28
-    if (b < 16) return result end
+    b = buf[2]; result |= (b & 0x7f) << 7
+    (b < 0x80) && return (result, 2)
+
+    b = buf[3]; result |= (b & 0x7f) << 14
+    (b < 0x80) && return (result, 3)
+
+    b = buf[4]; result |= (b & 0x7f) << 21
+    (b < 0x80) && return (result, 4)
+
+    b = buf[5]; result |= (b & 0x7f) << 28
+    (b < 0x10) && return (result, 5)
 
     error("Could not decode varint32.")
 end
@@ -33,7 +35,7 @@ end
 Encodes `value` into `buf` starting at `offset`. Returns the index
 just past the last byte of the varint32.
 """
-function encode32!(buf::Vector{UInt8}, offset::Int, value::UInt32)
+function encode32!(buf::Vector{UInt8}, offset::Integer, value::UInt32)
     if value < (1 << 7)
         buf[offset] = value % UInt8
 	elseif value < (1 << 14)
@@ -55,5 +57,5 @@ function encode32!(buf::Vector{UInt8}, offset::Int, value::UInt32)
 		buf[offset+=1] = (value >> 21 | 128) % UInt8
 		buf[offset+=1] = (value >> 28) % UInt8
 	end
-    return offset += 1
+    return offset + 1
 end
