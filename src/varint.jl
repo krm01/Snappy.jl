@@ -8,7 +8,7 @@ Reads and returns a varint32 from `buf`. Raises an error if no varint
 can be parsed.
 RETURNS: (varint, nBytesRead)
 """
-function parse32(buf::Vector{UInt8})
+@inline function parse32(buf::Vector{UInt8})
     local b::UInt32 = convert(UInt32, buf[1])
     local result::UInt32 = b & 0x7f
     (b < 0x80) && return (result, 1)
@@ -35,7 +35,7 @@ end
 Encodes `value` into `buf` starting at `offset`. Returns the index
 just past the last byte of the varint32.
 """
-function encode32!(buf::Vector{UInt8}, offset::Integer, value::UInt32)
+@inline function encode32!(buf::Vector{UInt8}, offset::Integer, value::UInt32)
     if value < (1 << 7)
         buf[offset] = value % UInt8
 	elseif value < (1 << 14)

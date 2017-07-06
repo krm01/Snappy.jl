@@ -1,6 +1,10 @@
 
 using Juno
 
+if VERSION < v"0.6"
+    ⊻ = $
+end
+
 const global K_BLOCK_SIZE = 1 << 15
 const global K_INPUT_MARGIN_BYTES = 15
 const global K_MAX_HASH_TABLE_SIZE = 1 << 14
@@ -18,17 +22,15 @@ Base.start(S::Skip32) = S.start
 Base.next(S::Skip32, state) = (state, state + (32 + state - S.start + 1) >> 5)
 Base.done(S::Skip32, state) = state > S.stop
 
-function load32u(a::AbstractArray, i::Integer)
-    return UInt32(a[i]) | (UInt32(a[i+1]) << 8) | (UInt32(a[i+2]) << 16) | (UInt32(a[i+3]) << 24)
+@inline function load32u(a::AbstractArray, i::Integer)
+    @inbounds return UInt32(a[i]) | (UInt32(a[i+1]) << 8) | (UInt32(a[i+2]) << 16) | (UInt32(a[i+3]) << 24)
 end
-function load64u(a::AbstractArray, i::Integer)
-    return UInt64(a[i]) | (UInt64(a[i+1]) << 8) | (UInt64(a[i+2]) << 16) | (UInt64(a[i+3]) << 24) | (UInt64(a[i+4]) << 32) | (UInt64(a[i+5]) << 40) | (UInt64(a[i+6]) << 48) | (UInt64(a[i+7]) << 56)
+@inline function load64u(a::AbstractArray, i::Integer)
+    @inbounds return UInt64(a[i]) | (UInt64(a[i+1]) << 8) | (UInt64(a[i+2]) << 16) | (UInt64(a[i+3]) << 24) | (UInt64(a[i+4]) << 32) | (UInt64(a[i+5]) << 40) | (UInt64(a[i+6]) << 48) | (UInt64(a[i+7]) << 56)
 end
 
-load32u(x::AbstractArray) = reinterpret(UInt32, x)[1]::UInt32
-load64u(x::AbstractArray) = reinterpret(UInt64, x)[1]::UInt64
-hashdword(bytes::UInt32, shift::UInt32) = (bytes * 0x1e35a7bd) >> shift
-log2floor(n::UInt32) = n == 0 ? -1 : 31 ⊻ leading_zeros(n)
+@inline hashdword(bytes::UInt32, shift::UInt32) = (bytes * 0x1e35a7bd) >> shift
+@inline log2floor(n::UInt32) = n == 0 ? -1 : 31 ⊻ leading_zeros(n)
 
 function alloc_hashtable(n)
     htsize = 256
@@ -41,7 +43,8 @@ end
 function compress_fragment!(vinput, output, outputindex, table)
     local shift::UInt32 = 32 - log2floor(length(table) % UInt32)
     ip = candidate = next_emit = base_ip = 1::Int
-    ip_limit = length(vinput) - K_INPUT_MARGIN_BYTES
+    ip_end = length(vinput)
+    ip_limit = ip_end - K_INPUT_MARGIN_BYTES
     if length(vinput) >= K_INPUT_MARGIN_BYTES
         while true
             ip += 1
@@ -50,10 +53,9 @@ function compress_fragment!(vinput, output, outputindex, table)
 
             matchfound = false
             skip = 32
-            while true
+            @inbounds while true
                 ip = next_ip
                 cur_hash = next_hash
-                @assert cur_hash == hashdword(load32u(vinput, ip), shift)
                 bytes_between_hash_lookups = skip >> 5
                 skip += bytes_between_hash_lookups
                 next_ip = ip + bytes_between_hash_lookups
@@ -63,8 +65,6 @@ function compress_fragment!(vinput, output, outputindex, table)
 
                 next_hash = hashdword(load32u(vinput, next_ip), shift)
                 candidate = base_ip + table[cur_hash]
-                @assert candidate >= base_ip
-                @assert candidate < ip
                 table[cur_hash] = ip - base_ip
 
                 if load32u(vinput, candidate) == load32u(vinput,ip)
@@ -74,7 +74,7 @@ function compress_fragment!(vinput, output, outputindex, table)
                 end
             end
 
-            while matchfound
+            @inbounds while matchfound
                 matched = 4 + find_match_length(vinput, candidate+4, vinput, ip+4)
                 outputindex = emit_copy!(output, outputindex, ip - candidate, matched)
                 ip += matched
@@ -101,10 +101,10 @@ function compress_fragment!(vinput, output, outputindex, table)
     return outputindex
 end
 
-function emit_literal!(output, outputindex, literal)
+@inline function emit_literal!(output, outputindex, literal)
     local len = length(literal)
     local n::UInt32 = (len - 1) % UInt32
-    if len < 60
+    @inbounds if len < 60
         fb = SNAPPY_LITERAL | ((n << 2) % UInt8)
         output[outputindex] = fb
     else
@@ -120,8 +120,8 @@ function emit_literal!(output, outputindex, literal)
     return outputindex + len
 end
 
-function emit_copy_upto_64!(output, outputindex, offset, len)
-    if len < 12 && offset < 2048
+@inline function emit_copy_upto_64!(output, outputindex, offset, len)
+    @inbounds if len < 12 && offset < 2048
         output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
         output[outputindex+=1] = (offset) % UInt8
     else
@@ -132,7 +132,7 @@ function emit_copy_upto_64!(output, outputindex, offset, len)
     return outputindex + 1
 end
 
-function emit_copy!(output, outputindex, offset, len)
+@inline function emit_copy!(output, outputindex, offset, len)
     if len < 12
         outputindex = emit_copy_upto_64!(output, outputindex, offset, len)
         return outputindex
@@ -150,44 +150,55 @@ function emit_copy!(output, outputindex, offset, len)
     return outputindex
 end
 
-function find_match_length(s1::AbstractArray, s2::AbstractArray)
-    # "fast" implementation from C, but is VERY SLOW in Julia
-    # because the load32/64 functions are making COPIES ON THE SLICES
-    # --------
-
-    # matched = 0
-    # len = min(length(s1), length(s2))
-    # for i in 1:8:len-8
-    #     # a1, a2 = load64u(s1[i:i+7]), load64u(s2[i:i+7])
-    #     a1, a2 = load64u(s1, i), load64u(s2, i)
-    #     matched_bytes = (trailing_zeros(a1 ⊻ a2) >> 3)
-    #     matched += matched_bytes
-    #     (a1 != a2) && break
-    # end
-    # for i in matched+1:len
-    #     (s1[i] != s2[i]) && break
-    #     matched += 1
-    # end
-    # return matched
-
-    # naive, compares every index rather than every 8 like above, but no allocation overhead
-    # --------
-    for i in 1:min(length(s1), length(s2))
-        if s1[i] != s2[i]
-            return i-1
-        end
-    end
-    return 0
-end
-
-function find_match_length(s1::AbstractArray, i1::Integer, s2::AbstractArray, i2::Integer)
-    # naive implementation 2
+@inline function find_match_length(s1::AbstractArray, i1::Integer, s2::AbstractArray, i2::Integer)
+    # naive implementation, also the fastest I've found so far
     # --------
     matched = 0
-    while s1[i1] == s2[i2]
+    @inbounds while s1[i1] == s2[i2] && i2 <= length(s2)
         matched += 1
         i1 += 1
         i2 += 1
     end
     return matched
 end
+
+@inline function find_match_length(s1::AbstractArray, i1::Integer, s2::AbstractArray, i2::Integer, len::Integer)
+    # "fast" direct port from C. slower than the while loop checking every index.
+    matched = 0
+    if i2 < len - 8
+        a1, a2 = load64u(s1, i1), load64u(s2, i2)
+        if a1 != a2
+            return (trailing_zeros(a1 ⊻ a2) >> 3)
+        else
+            i2 += 8
+            matched += 8
+        end
+    end
+
+    while i2 <= len - 8
+        a1, a2 = load64u(s1, i1+matched), load64u(s2, i2)
+        if a1 == a2
+            i2 += 8
+            matched += 8
+        else
+            matched_bytes = (trailing_zeros(a1 ⊻ a2) >> 3)
+            matched += matched_bytes
+            return matched
+        end
+    end
+
+    @inbounds while i2 < len
+        if s1[i1+matched] == s2[i2]
+            i2 +=1
+            matched += 1
+        else
+            return matched
+        end
+    end
+    return matched
+end
+
+test_a = "example string that repeats a little. and a break in the middle. example string that repeats a little. and then it diverges."
+test_b = "example string that repeats a little. and then! example string that repeats a little. and then! exa"
+test_b = Vector{UInt8}(test_b)
+# Juno.@step find_match_length(test_b, 1, test_b, 49, length(test_b))
