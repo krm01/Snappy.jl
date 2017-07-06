@@ -44,24 +44,37 @@ function compress_fragment!(vinput, output, outputindex, table)
     ip_limit = length(vinput) - K_INPUT_MARGIN_BYTES
     if length(vinput) >= K_INPUT_MARGIN_BYTES
         while true
+            ip += 1
+            next_hash = hashdword(load32u(vinput, ip), shift)
+            next_ip = ip
 
             matchfound = false
-            for i::Int in Skip32(ip += 1, ip_limit)
-                ip = i
-                # cur_hash = hashdword(load32u(vinput[i:i+3]), shift)
-                cur_hash = hashdword(load32u(vinput, i), shift)
+            skip = 32
+            while true
+                ip = next_ip
+                cur_hash = next_hash
+                @assert cur_hash == hashdword(load32u(vinput, ip), shift)
+                bytes_between_hash_lookups = skip >> 5
+                skip += bytes_between_hash_lookups
+                next_ip = ip + bytes_between_hash_lookups
+
+                # early exit
+                (next_ip > ip_limit) && break
+
+                next_hash = hashdword(load32u(vinput, next_ip), shift)
                 candidate = base_ip + table[cur_hash]
-                table[cur_hash] = i - base_ip
-                # if load32u(vinput[candidate:candidate+3]) == load32u(vinput[i:i+3])
-                if load32u(vinput, candidate) == load32u(vinput,i)
+                @assert candidate >= base_ip
+                @assert candidate < ip
+                table[cur_hash] = ip - base_ip
+
+                if load32u(vinput, candidate) == load32u(vinput,ip)
                     matchfound = true
-                    outputindex = emit_literal!(output, outputindex, vinput[next_emit:i-1])
+                    outputindex = emit_literal!(output, outputindex, vinput[next_emit:ip-1])
                     break
                 end
             end
 
             while matchfound
-                # matched = 4 + find_match_length(@view(vinput[candidate+4:end]), @view(vinput[ip+4:end]))
                 matched = 4 + find_match_length(vinput, candidate+4, vinput, ip+4)
                 outputindex = emit_copy!(output, outputindex, ip - candidate, matched)
                 ip += matched
@@ -70,14 +83,12 @@ function compress_fragment!(vinput, output, outputindex, table)
                 # potential early exit
                 (ip >= ip_limit) && break
 
-                # input_bytes = load64u(vinput[ip-1:ip+6])
                 input_bytes = load64u(vinput, ip-1)
                 prev_hash = hashdword(input_bytes % UInt32, shift)
                 table[prev_hash] = ip - base_ip - 1
                 cur_hash = hashdword((input_bytes >>> 8) % UInt32, shift)
                 candidate = base_ip + table[cur_hash]
                 table[cur_hash] = ip - base_ip
-                # ((input_bytes >>> 8) % UInt32 != load32u(vinput[candidate:candidate+3])) && break
                 ((input_bytes >>> 8) % UInt32 != load32u(vinput, candidate)) && break
             end
             (ip > ip_limit) && break
@@ -105,12 +116,10 @@ function emit_literal!(output, outputindex, literal)
         end
         output[base] = SNAPPY_LITERAL | (((59+count) << 2) % UInt8)
     end
-    # TODO: change to unsafe_copy!
     unsafe_copy!(output, outputindex+=1, literal, 1, len)
     return outputindex + len
 end
 
-# TODO: This is probably a problem point for off-by-one, dealing with "offset" and "len"
 function emit_copy_upto_64!(output, outputindex, offset, len)
     if len < 12 && offset < 2048
         output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
@@ -123,7 +132,6 @@ function emit_copy_upto_64!(output, outputindex, offset, len)
     return outputindex + 1
 end
 
-# TODO: This is probably a problem point for off-by-one, dealing with "offset" and "len"
 function emit_copy!(output, outputindex, offset, len)
     if len < 12
         outputindex = emit_copy_upto_64!(output, outputindex, offset, len)

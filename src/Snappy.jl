@@ -14,6 +14,7 @@ using Juno
 
 function compress(input::Vector{UInt8})
     local sourcelen::UInt32
+    local inputv::Vector{UInt8}
     try
         sourcelen = convert(UInt32, length(input))
     catch e::InexactError
@@ -26,7 +27,7 @@ function compress(input::Vector{UInt8})
     table = alloc_hashtable(sourcelen)
     for i in 1:K_BLOCK_SIZE+1:sourcelen
         fill!(table, 0)
-        # TODO for some reason it's faster to copy than use a view
+        # TODO for some reason it's faster to copy than use a view?
         # inputv = @view input[i:min(i+K_BLOCK_SIZE, end)]
         inputv = input[i:min(i+K_BLOCK_SIZE, end)]
         outputindex = compress_fragment!(inputv, output, outputindex, table)
