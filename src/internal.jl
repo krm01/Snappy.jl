@@ -23,10 +23,10 @@ Base.next(S::Skip32, state) = (state, state + (32 + state - S.start + 1) >> 5)
 Base.done(S::Skip32, state) = state > S.stop
 
 @inline function load32u(a::AbstractArray, i::Integer)
-    @inbounds return UInt32(a[i]) | (UInt32(a[i+1]) << 8) | (UInt32(a[i+2]) << 16) | (UInt32(a[i+3]) << 24)
+    return UInt32(a[i]) | (UInt32(a[i+1]) << 8) | (UInt32(a[i+2]) << 16) | (UInt32(a[i+3]) << 24)
 end
 @inline function load64u(a::AbstractArray, i::Integer)
-    @inbounds return UInt64(a[i]) | (UInt64(a[i+1]) << 8) | (UInt64(a[i+2]) << 16) | (UInt64(a[i+3]) << 24) | (UInt64(a[i+4]) << 32) | (UInt64(a[i+5]) << 40) | (UInt64(a[i+6]) << 48) | (UInt64(a[i+7]) << 56)
+    return UInt64(a[i]) | (UInt64(a[i+1]) << 8) | (UInt64(a[i+2]) << 16) | (UInt64(a[i+3]) << 24) | (UInt64(a[i+4]) << 32) | (UInt64(a[i+5]) << 40) | (UInt64(a[i+6]) << 48) | (UInt64(a[i+7]) << 56)
 end
 
 @inline hashdword(bytes::UInt32, shift::UInt32) = (bytes * 0x1e35a7bd) >> shift
@@ -53,7 +53,7 @@ function compress_fragment!(vinput, output, outputindex, table)
 
             matchfound = false
             skip = 32
-            @inbounds while true
+            while true
                 ip = next_ip
                 cur_hash = next_hash
                 bytes_between_hash_lookups = skip >> 5
@@ -74,7 +74,7 @@ function compress_fragment!(vinput, output, outputindex, table)
                 end
             end
 
-            @inbounds while matchfound
+            while matchfound
                 matched = 4 + find_match_length(vinput, candidate+4, vinput, ip+4)
                 outputindex = emit_copy!(output, outputindex, ip - candidate, matched)
                 ip += matched
@@ -104,7 +104,7 @@ end
 @inline function emit_literal!(output, outputindex, literal)
     local len = length(literal)
     local n::UInt32 = (len - 1) % UInt32
-    @inbounds if len < 60
+    if len < 60
         fb = SNAPPY_LITERAL | ((n << 2) % UInt8)
         output[outputindex] = fb
     else
@@ -116,12 +116,12 @@ end
         end
         output[base] = SNAPPY_LITERAL | (((59+count) << 2) % UInt8)
     end
-    unsafe_copy!(output, outputindex+=1, literal, 1, len)
+    copy!(output, outputindex+=1, literal, 1, len)
     return outputindex + len
 end
 
 @inline function emit_copy_upto_64!(output, outputindex, offset, len)
-    @inbounds if len < 12 && offset < 2048
+    if len < 12 && offset < 2048
         output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
         output[outputindex+=1] = (offset) % UInt8
     else
@@ -154,7 +154,7 @@ end
     # naive implementation, also the fastest I've found so far
     # --------
     matched = 0
-    @inbounds while s1[i1] == s2[i2] && i2 <= length(s2)
+    while s1[i1] == s2[i2] && i2 <= length(s2)
         matched += 1
         i1 += 1
         i2 += 1
@@ -187,7 +187,7 @@ end
         end
     end
 
-    @inbounds while i2 < len
+    while i2 < len
         if s1[i1+matched] == s2[i2]
             i2 +=1
             matched += 1
@@ -198,7 +198,12 @@ end
     return matched
 end
 
-test_a = "example string that repeats a little. and a break in the middle. example string that repeats a little. and then it diverges."
-test_b = "example string that repeats a little. and then! example string that repeats a little. and then! exa"
-test_b = Vector{UInt8}(test_b)
-# Juno.@step find_match_length(test_b, 1, test_b, 49, length(test_b))
+
+@inline function incremental_copy_slow!(v1, i1, v2, i2, len)
+    # TODO: or is it? just use this everywhere for now, try the fast version later.
+    while i2 < len
+        @inbounds v1[i1] = v2[i2]
+        i1 += 1
+        i2 += 1
+    end
+end
