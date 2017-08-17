@@ -2,15 +2,11 @@ module Snappy
 
 export
     compress,
-    maxlength_compressed,
-    isvalid_compressed,
-    uncompress,
-    length_uncompressed
+    uncompress
 
 include("varint.jl")
 include("internal.jl")
 
-using Juno
 
 function compress(input::Vector{UInt8})
     local sourcelen::UInt32
@@ -21,7 +17,7 @@ function compress(input::Vector{UInt8})
         error("input too large.")
     end
 
-    # preallocate the output buffer, and resize down afterwards. faster than vcat'ing dynamic arrays
+    # preallocate the output buffer, and resize down afterwards. faster than vcat'ing dynamic arrays I think
     output = Vector{UInt8}(maxlength_compressed(sourcelen))
     outputindex = encode32!(output, 1, sourcelen)
     table = alloc_hashtable(sourcelen)
@@ -37,7 +33,6 @@ end
 
 
 function maxlength_compressed(sourcelen)
-    # so sayeth the Google
     return 32 + sourcelen + (sourcelen ÷ 6)
 end
 
@@ -49,23 +44,20 @@ function isvalid_compressed(input::Vector{UInt8})
 end
 
 
-# TODO: NOT YET IMPLEMENTED
 function uncompress(input::Vector{UInt8})
-    convert(Vector{UInt8}, "uncompress: not implemented")
+    output_size, offset = length_uncompressed(input)
+    output = Vector{UInt8}(output_size)
+    decompress_all_tags!(output, input, start(input) + offset)
+    return output
 end
 
 
-# TODO: NOT YET IMPLEMENTED
 function length_uncompressed(input::Vector{UInt8})
-    0
+    return parse32(input)
 end
 
 
-# convenience wrappers for operating on Strings
+# for convenience
 compress(input::String) = compress(convert(Vector{UInt8}, input))
-
-isvalid_compressed(input::String) = isvalid_compressed(convert(Vector{UInt8}, input))
-
-length_uncompressed(input::String) = length_uncompressed(convert(Vector{UInt8}, input))
 
 end

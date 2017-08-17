@@ -4,19 +4,29 @@ include("../src/internal.jl")
 using Snappy
 using Base.Test
 
-#println(map(Int, convert(Vector{UInt8}, compress(raw))))
+@testset "round_trip_tests" begin
 
-# @testset "find_match_length" begin
-#     s2 = convert(Vector{UInt8}, "test string prefix up to here... and now they're different!")
-#     s1 = convert(Vector{UInt8}, "test string prefix up to here. but then they diverge")
-#     matched = find_match_length(s1, s2)
-#     @test matched == 30
-# end
+    testfiles = [
+        "alice29.txt",
+        "asyoulik.txt",
+        "html",
+        "html_x_4",
+        "kppkn.gtb",
+        "lcet10.txt",
 
-@testset "test_fromfile" begin
-    input = read("$(@__DIR__)/testdata/alice29.txt")
-    expected = read("$(@__DIR__)/testdata/alice29.snappy")
-    actual = compress(input)
-    @test hash(actual) == hash(expected)
-    @test hash(actual) == hash(expected)
+        # these guys are failing
+        "fireworks.jpeg",
+        "geo.protodata",
+        "paper-100k.pdf",
+        "plrabn12.txt",
+        "urls.10K",
+    ]
+
+    for file in files
+        raw = read("$(@__DIR__)/testdata/$(file)")
+        a = compress(raw)
+        b = uncompress(a)
+
+        @test hash(b) == hash(raw);
+    end
 end
