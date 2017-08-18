@@ -1,5 +1,4 @@
 include("../src/Snappy.jl")
-include("../src/internal.jl")
 
 using Snappy
 using Base.Test
@@ -22,11 +21,12 @@ using Base.Test
         "urls.10K",
     ]
 
-    for file in files
-        raw = read("$(@__DIR__)/testdata/$(file)")
+    for file in testfiles
+        raw = read("test/testdata/$(file)")
         a = compress(raw)
         b = uncompress(a)
 
         @test hash(b) == hash(raw);
     end
 end
+
