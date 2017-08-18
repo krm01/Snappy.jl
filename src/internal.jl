@@ -1,6 +1,4 @@
 
-using Juno
-
 if VERSION < v"0.6"
     ⊻ = $
 end
