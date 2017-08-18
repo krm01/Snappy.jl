@@ -3,7 +3,7 @@ include("../src/Snappy.jl")
 using Snappy
 using Base.Test
 
-@show pwd()
+@show @__DIR__
 @testset "round_trip_tests" begin
 
     testfiles = [
@@ -23,7 +23,7 @@ using Base.Test
     ]
 
     for file in testfiles
-        raw = read("$(pwd())/test/testdata/$(file)")
+        raw = read("$(@__DIR__)/testdata/$(file)")
         a = compress(raw)
         b = uncompress(a)
 
