@@ -3,8 +3,7 @@ include("../src/Snappy.jl")
 using Snappy
 using Base.Test
 
-@show @__DIR__
-@testset "round_trip_tests" begin
+@testset "round_trip_compression_tests" begin
 
     testfiles = [
         "alice29.txt",
@@ -13,8 +12,6 @@ using Base.Test
         "html_x_4",
         "kppkn.gtb",
         "lcet10.txt",
-
-        # these guys are failing
         "fireworks.jpeg",
         "geo.protodata",
         "paper-100k.pdf",
@@ -24,10 +21,7 @@ using Base.Test
 
     for file in testfiles
         raw = read("$(@__DIR__)/testdata/$(file)")
-        a = compress(raw)
-        b = uncompress(a)
-
-        @test hash(b) == hash(raw);
+        @test raw == uncompress(compress(raw));
     end
 end
 
