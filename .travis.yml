@@ -1,4 +1,4 @@
 language: julia
-install: true
-script: julia test/Snappy.jl
+julia:
+  - 0.6.0
 
