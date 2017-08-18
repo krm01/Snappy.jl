@@ -37,13 +37,6 @@ function maxlength_compressed(sourcelen)
 end
 
 
-
-# TODO: NOT YET IMPLEMENTED
-function isvalid_compressed(input::Vector{UInt8})
-    false
-end
-
-
 function uncompress(input::Vector{UInt8})
     output_size, offset = length_uncompressed(input)
     output = Vector{UInt8}(output_size)
@@ -61,3 +54,4 @@ end
 compress(input::String) = compress(convert(Vector{UInt8}, input))
 
 end
+
