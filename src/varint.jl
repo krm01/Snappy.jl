@@ -38,24 +38,25 @@ just past the last byte of the varint32.
 @inline function encode32!(buf::Vector{UInt8}, offset::Integer, value::UInt32)
     if value < (1 << 7)
         buf[offset] = value % UInt8
-	elseif value < (1 << 14)
-		buf[offset] = (value | 128) % UInt8
-		buf[offset+=1] = (value >> 7) % UInt8
-	elseif value < (1 << 21)
-		buf[offset] = (value | 128) % UInt8
-		buf[offset+=1] = (value >> 7 | 128) % UInt8
-		buf[offset+=1] = (value >> 14) % UInt8
-	elseif value < (1 << 28)
-		buf[offset] = (value | 128) % UInt8
-		buf[offset+=1] = (value >> 7 | 128) % UInt8
-		buf[offset+=1] = (value >> 14 | 128) % UInt8
-		buf[offset+=1] = (value >> 21) % UInt8
-	else
-		buf[offset] = (value | 128) % UInt8
-		buf[offset+=1] = (value >> 7 | 128) % UInt8
-		buf[offset+=1] = (value >> 14 | 128) % UInt8
-		buf[offset+=1] = (value >> 21 | 128) % UInt8
-		buf[offset+=1] = (value >> 28) % UInt8
-	end
+        elseif value < (1 << 14)
+            buf[offset] = (value | 128) % UInt8
+            buf[offset+=1] = (value >> 7) % UInt8
+        elseif value < (1 << 21)
+            buf[offset] = (value | 128) % UInt8
+            buf[offset+=1] = (value >> 7 | 128) % UInt8
+            buf[offset+=1] = (value >> 14) % UInt8
+        elseif value < (1 << 28)
+            buf[offset] = (value | 128) % UInt8
+            buf[offset+=1] = (value >> 7 | 128) % UInt8
+            buf[offset+=1] = (value >> 14 | 128) % UInt8
+            buf[offset+=1] = (value >> 21) % UInt8
+        else
+            buf[offset] = (value | 128) % UInt8
+            buf[offset+=1] = (value >> 7 | 128) % UInt8
+            buf[offset+=1] = (value >> 14 | 128) % UInt8
+            buf[offset+=1] = (value >> 21 | 128) % UInt8
+            buf[offset+=1] = (value >> 28) % UInt8
+        end
     return offset + 1
 end
+
