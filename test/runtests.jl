@@ -25,3 +25,15 @@ using Base.Test
     end
 end
 
+@testset "invalid_data" begin
+
+    testfiles = [
+        "baddata1.snappy",
+        "baddata2.snappy",
+        "baddata3.snappy",
+    ]
+    for file in testfiles
+        raw = read("$(@__DIR__)/testdata/$(file)")
+        @test_throws ErrorException uncompress(raw);
+    end
+end

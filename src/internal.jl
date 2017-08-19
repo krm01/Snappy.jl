@@ -53,10 +53,10 @@ const global CHAR_TABLE = [
 ]::Vector{UInt16}
 
 @inline function load32u(a::AbstractArray, i::Integer)
-    @inbounds a0 = UInt32(a[i])
-    @inbounds a1 = UInt32(a[i+1]) << 8
-    @inbounds a2 = UInt32(a[i+2]) << 16
-    @inbounds a3 = UInt32(a[i+3]) << 24
+    a0 = UInt32(a[i])
+    a1 = UInt32(a[i+1]) << 8
+    a2 = UInt32(a[i+2]) << 16
+    a3 = UInt32(a[i+3]) << 24
     return a0 | a1 | a2 | a3
 end
 
@@ -95,8 +95,8 @@ function compress_fragment!(vinput, output, outputindex, table)
                 (next_ip > ip_limit) && break
 
                 next_hash = hashdword(load32u(vinput, next_ip), shift)
-                @inbounds candidate = base_ip + table[cur_hash+1]
-                @inbounds table[cur_hash+1] = ip - base_ip
+                candidate = base_ip + table[cur_hash+1]
+                table[cur_hash+1] = ip - base_ip
 
                 if load32u(vinput, candidate) == load32u(vinput,ip)
                     matchfound = true
@@ -117,9 +117,9 @@ function compress_fragment!(vinput, output, outputindex, table)
                 prev_hash = hashdword(load32u(vinput, ip-1), shift)
                 input_bytes = load32u(vinput, ip)
                 cur_hash = hashdword(input_bytes, shift)
-                @inbounds table[prev_hash+1] = ip - base_ip - 1
-                @inbounds candidate = base_ip + table[cur_hash+1]
-                @inbounds table[cur_hash+1] = ip - base_ip
+                table[prev_hash+1] = ip - base_ip - 1
+                candidate = base_ip + table[cur_hash+1]
+                table[cur_hash+1] = ip - base_ip
 
                 (input_bytes != load32u(vinput, candidate)) && break
             end
@@ -136,15 +136,15 @@ end
     local n::UInt32 = (len - 1) % UInt32
     if len < 60
         fb = SNAPPY_LITERAL | ((n << 2) % UInt8)
-        @inbounds output[outputindex] = fb
+        output[outputindex] = fb
     else
         count = 0
         base = outputindex
         while n > 0
-            @inbounds output[outputindex+=1] = n % UInt8
+            output[outputindex+=1] = n % UInt8
             n >>= 8; count += 1;
         end
-        @inbounds output[base] = SNAPPY_LITERAL | (((59+count) << 2) % UInt8)
+        output[base] = SNAPPY_LITERAL | (((59+count) << 2) % UInt8)
     end
     unsafe_copy!(output, outputindex+=1, input, inputindex, len)
     return outputindex + len
@@ -152,12 +152,12 @@ end
 
 @inline function emit_copy_upto_64!(output, outputindex, offset, len)
     if len < 12 && offset < 2048
-        @inbounds output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
-        @inbounds output[outputindex+=1] = (offset) % UInt8
+        output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
+        output[outputindex+=1] = (offset) % UInt8
     else
-        @inbounds output[outputindex] =  (SNAPPY_COPY_2_BYTE_OFFSET + ((len - 1) << 2)) % UInt8
-        @inbounds output[outputindex+=1] = (offset) % UInt8
-        @inbounds output[outputindex+=1] = (offset >>> 8) % UInt8
+        output[outputindex] =  (SNAPPY_COPY_2_BYTE_OFFSET + ((len - 1) << 2)) % UInt8
+        output[outputindex+=1] = (offset) % UInt8
+        output[outputindex+=1] = (offset >>> 8) % UInt8
     end
     return outputindex + 1
 end
@@ -183,7 +183,7 @@ end
 @inline function find_match_length(s1::AbstractArray, i1::Integer, s2::AbstractArray, i2::Integer)
     # naive implementation, but also the fastest I've tried so far
     matched = 0
-    @inbounds while i2 <= length(s2) && s1[i1] == s2[i2]
+    while i2 <= length(s2) && s1[i1] == s2[i2]
         matched += 1
         i1 += 1
         i2 += 1
@@ -202,20 +202,22 @@ end
 end
 
 function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip)
+
     ip_limit = endof(input)
     op = start(output)
+    op_limit = endof(output)
 
-    while op < endof(output)
+    # extending the input artificially with this 4 byte buffer ensures the tag can always
+    # be read from 4 bytes of the input stream, even if there are fewer than four bytes left.
+    # this is faster than a conditional check during the loop.
+    append!(input, zeros(UInt8, 4))
+
+    while op < op_limit && ip < ip_limit
 
         c = input[ip]
         ip += 1
 
-        # TODO replace this shameful hack properly. extends the input if its too small to read the uint.
-        if ip+4 > ip_limit
-            tag = load32u([input[ip:end]; [0x0, 0x0, 0x0, 0x0]], 1)
-        else
-            tag = load32u(input, ip)
-        end
+        tag = load32u(input, ip)
 
         entry = CHAR_TABLE[c+1]
         trailer = tag & WORDMASK[(entry >> 11)+1]
@@ -231,4 +233,5 @@ function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip)
             op = incremental_copy_slow!(output, op, output, op - (copy_offset + trailer), len)
         end
     end
+    return op
 end

@@ -14,7 +14,7 @@ function compress(input::Vector{UInt8})
     try
         sourcelen = convert(UInt32, length(input))
     catch e::InexactError
-        error("input too large.")
+        error("Input too large.")
     end
 
     # preallocate the output buffer, and resize down afterwards. faster than vcat'ing dynamic arrays I think
@@ -40,7 +40,13 @@ end
 function uncompress(input::Vector{UInt8})
     output_size, offset = length_uncompressed(input)
     output = Vector{UInt8}(output_size)
-    decompress_all_tags!(output, input, start(input) + offset)
+    try
+        uncompressed_len = decompress_all_tags!(output, input, start(input) + offset)
+        (output_size != uncompressed_len-1) && error("Invalid input.")
+    catch BoundsError
+        error("Invalid input.")
+    end
+
     return output
 end
 
