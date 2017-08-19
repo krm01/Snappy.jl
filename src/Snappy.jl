@@ -32,7 +32,7 @@ function compress(input::Vector{UInt8})
 end
 
 
-function maxlength_compressed(sourcelen)
+function maxlength_compressed(sourcelen::Integer)
     return 32 + sourcelen + (sourcelen ÷ 6)
 end
 
@@ -52,7 +52,7 @@ end
 
 
 function length_uncompressed(input::Vector{UInt8})
-    return parse32(input)
+    return parse32(input, start(input))
 end
 
 

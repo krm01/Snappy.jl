@@ -63,7 +63,7 @@ end
 @inline hashdword(bytes::UInt32, shift::UInt32) = (bytes * 0x1e35a7bd) >> shift
 @inline log2floor(n::UInt32) = n == 0 ? -1 : 31 ⊻ leading_zeros(n)
 
-function alloc_hashtable(n)
+function alloc_hashtable(n::Integer)
     htsize = 256
     while htsize < K_MAX_HASH_TABLE_SIZE && htsize < n
         htsize <<= 1
@@ -71,7 +71,7 @@ function alloc_hashtable(n)
     return Vector{UInt16}(htsize)
 end
 
-function compress_fragment!(vinput, output, outputindex, table)
+function compress_fragment!(vinput::Vector{UInt8}, output::Vector{UInt8}, outputindex::Integer, table::Vector{UInt16})
     local shift::UInt32 = 32 - log2floor(length(table) % UInt32)
     ip = candidate = next_emit = base_ip = 1::Int
     ip_end = length(vinput)
@@ -132,7 +132,7 @@ function compress_fragment!(vinput, output, outputindex, table)
     return outputindex
 end
 
-@inline function emit_literal!(output, outputindex, input, inputindex, len)
+@inline function emit_literal!(output::Vector{UInt8}, outputindex::Integer, input::Vector{UInt8}, inputindex::Integer, len::Integer)
     local n::UInt32 = (len - 1) % UInt32
     if len < 60
         fb = SNAPPY_LITERAL | ((n << 2) % UInt8)
@@ -150,7 +150,7 @@ end
     return outputindex + len
 end
 
-@inline function emit_copy_upto_64!(output, outputindex, offset, len)
+@inline function emit_copy_upto_64!(output::Vector{UInt8}, outputindex::Integer, offset::Integer, len::Integer)
     if len < 12 && offset < 2048
         output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
         output[outputindex+=1] = (offset) % UInt8
@@ -162,7 +162,7 @@ end
     return outputindex + 1
 end
 
-@inline function emit_copy!(output, outputindex, offset, len)
+@inline function emit_copy!(output::Vector{UInt8}, outputindex::Integer, offset::Integer, len::Integer)
     if len < 12
         outputindex = emit_copy_upto_64!(output, outputindex, offset, len)
         return outputindex
@@ -191,7 +191,7 @@ end
     return matched
 end
 
-@inline function incremental_copy_slow!(dst, di, src, si, len)
+@inline function incremental_copy_slow!(dst::AbstractArray, di::Integer, src::AbstractArray, si::Integer, len::Integer)
     # TODO: or IS IT? just use this everywhere for now, optimize later.
     for _ in 1:len
         dst[di] = src[si]
@@ -201,7 +201,7 @@ end
     return di
 end
 
-function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip)
+function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip::Integer)
 
     ip_limit = endof(input)
     op = start(output)

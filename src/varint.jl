@@ -8,8 +8,8 @@ Reads and returns a varint32 from `buf`. Raises an error if no varint
 can be parsed.
 RETURNS: (varint, nBytesRead)
 """
-@inline function parse32(buf::Vector{UInt8})
-    local b::UInt32 = convert(UInt32, buf[1])
+@inline function parse32(buf::Vector{UInt8}, offset::Integer)
+    local b::UInt32 = convert(UInt32, buf[offset])
     local result::UInt32 = b & 0x7f
     (b < 0x80) && return (result, 1)
 
