@@ -17,15 +17,18 @@ using Base.Test
         "paper-100k.pdf",
         "plrabn12.txt",
         "urls.10K",
-    ]
 
+        "random1.bin",
+        "random2.bin",
+        "random3.bin",
+    ]
     for file in testfiles
-        raw = read("$(@__DIR__)/testdata/$(file)")
+        raw = read("$(Base.source_dir())/testdata/$(file)")
         @test hash(raw) == hash(uncompress(compress(raw)));
     end
 end
 
-@testset "invalid_data" begin
+@testset "invalid_data_tests" begin
 
     testfiles = [
         "baddata1.snappy",
@@ -33,7 +36,20 @@ end
         "baddata3.snappy",
     ]
     for file in testfiles
-        raw = read("$(@__DIR__)/testdata/$(file)")
+        raw = read("$(Base.source_dir())/testdata/$(file)")
         @test_throws ErrorException uncompress(raw);
+    end
+end
+
+@testset "generated_random_compression_tests" begin
+
+    wordsize = 1 << 4
+    dictsize = 1 << 6
+    maxwords = 1 << 16
+
+    dictionary = [rand(UInt8, rand(1:wordsize)) for _ in 1:dictsize]
+    for i in 1:100
+        raw = vcat((dictionary[rand(1:dictsize)] for _ in 1:rand(1:maxwords))...)
+        @test hash(raw) == hash(uncompress(compress(raw)));
     end
 end

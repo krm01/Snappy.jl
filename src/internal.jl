@@ -212,7 +212,7 @@ function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip::I
     # this is faster than a conditional check during the loop.
     append!(input, zeros(UInt8, 4))
 
-    while op < op_limit && ip < ip_limit
+    while ip < ip_limit
 
         c = input[ip]
         ip += 1
@@ -226,10 +226,16 @@ function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip::I
 
         if ((c & 0x3) % UInt8) == SNAPPY_LITERAL
             literal_length = len + trailer
+            if ip + literal_length > ip_limit+1 || op + literal_length > op_limit+1
+                return 0 # data corruption
+            end
             op = incremental_copy_slow!(output, op, input, ip, literal_length)
             ip += literal_length
         else
             copy_offset = (entry & 0x700)
+            if op + len > op_limit+1 || op - (copy_offset+trailer) < 0
+                return 0 # data corruption
+            end
             op = incremental_copy_slow!(output, op, output, op - (copy_offset + trailer), len)
         end
     end

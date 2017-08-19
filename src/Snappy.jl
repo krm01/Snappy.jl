@@ -40,13 +40,8 @@ end
 function uncompress(input::Vector{UInt8})
     output_size, offset = length_uncompressed(input)
     output = Vector{UInt8}(output_size)
-    try
-        uncompressed_len = decompress_all_tags!(output, input, start(input) + offset)
-        (output_size != uncompressed_len-1) && error("Invalid input.")
-    catch BoundsError
-        error("Invalid input.")
-    end
-
+    uncompressed_len = decompress_all_tags!(output, input, start(input) + offset)
+    (output_size != uncompressed_len-1) && error("Invalid input.")
     return output
 end
 
