@@ -126,7 +126,7 @@ function compress_fragment!(vinput::Vector{UInt8}, output::Vector{UInt8}, output
             (ip > ip_limit) && break
         end
     end
-    if next_emit < length(vinput)
+    if next_emit <= length(vinput)
         outputindex = emit_literal!(output, outputindex, vinput, next_emit, ip_end-next_emit+1)
     end
     return outputindex
