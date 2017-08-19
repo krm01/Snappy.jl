@@ -54,4 +54,3 @@ end
 compress(input::String) = compress(convert(Vector{UInt8}, input))
 
 end
-

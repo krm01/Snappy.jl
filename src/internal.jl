@@ -53,10 +53,11 @@ const global CHAR_TABLE = [
 ]::Vector{UInt16}
 
 @inline function load32u(a::AbstractArray, i::Integer)
-    return UInt32(a[i]) | (UInt32(a[i+1]) << 8) | (UInt32(a[i+2]) << 16) | (UInt32(a[i+3]) << 24)
-end
-@inline function load64u(a::AbstractArray, i::Integer)
-    return UInt64(a[i]) | (UInt64(a[i+1]) << 8) | (UInt64(a[i+2]) << 16) | (UInt64(a[i+3]) << 24) | (UInt64(a[i+4]) << 32) | (UInt64(a[i+5]) << 40) | (UInt64(a[i+6]) << 48) | (UInt64(a[i+7]) << 56)
+    @inbounds a0 = UInt32(a[i])
+    @inbounds a1 = UInt32(a[i+1]) << 8
+    @inbounds a2 = UInt32(a[i+2]) << 16
+    @inbounds a3 = UInt32(a[i+3]) << 24
+    return a0 | a1 | a2 | a3
 end
 
 @inline hashdword(bytes::UInt32, shift::UInt32) = (bytes * 0x1e35a7bd) >> shift
@@ -94,12 +95,12 @@ function compress_fragment!(vinput, output, outputindex, table)
                 (next_ip > ip_limit) && break
 
                 next_hash = hashdword(load32u(vinput, next_ip), shift)
-                candidate = base_ip + table[cur_hash+1]
-                table[cur_hash+1] = ip - base_ip
+                @inbounds candidate = base_ip + table[cur_hash+1]
+                @inbounds table[cur_hash+1] = ip - base_ip
 
                 if load32u(vinput, candidate) == load32u(vinput,ip)
                     matchfound = true
-                    outputindex = emit_literal!(output, outputindex, vinput[next_emit:ip-1])
+                    outputindex = emit_literal!(output, outputindex, vinput, next_emit, ip-next_emit)
                     break
                 end
             end
@@ -113,51 +114,50 @@ function compress_fragment!(vinput, output, outputindex, table)
                 # potential early exit
                 (ip >= ip_limit) && break
 
-                input_bytes = load64u(vinput, ip-1)
-                prev_hash = hashdword(input_bytes % UInt32, shift)
-                table[prev_hash+1] = ip - base_ip - 1
-                cur_hash = hashdword((input_bytes >>> 8) % UInt32, shift)
-                candidate = base_ip + table[cur_hash+1]
-                table[cur_hash+1] = ip - base_ip
-                ((input_bytes >>> 8) % UInt32 != load32u(vinput, candidate)) && break
+                prev_hash = hashdword(load32u(vinput, ip-1), shift)
+                input_bytes = load32u(vinput, ip)
+                cur_hash = hashdword(input_bytes, shift)
+                @inbounds table[prev_hash+1] = ip - base_ip - 1
+                @inbounds candidate = base_ip + table[cur_hash+1]
+                @inbounds table[cur_hash+1] = ip - base_ip
+
+                (input_bytes != load32u(vinput, candidate)) && break
             end
             (ip > ip_limit) && break
-            ip += 1
         end
     end
     if next_emit < length(vinput)
-        outputindex = emit_literal!(output, outputindex, vinput[next_emit:end])
+        outputindex = emit_literal!(output, outputindex, vinput, next_emit, ip_end-next_emit+1)
     end
     return outputindex
 end
 
-@inline function emit_literal!(output, outputindex, literal)
-    local len = length(literal)
+@inline function emit_literal!(output, outputindex, input, inputindex, len)
     local n::UInt32 = (len - 1) % UInt32
     if len < 60
         fb = SNAPPY_LITERAL | ((n << 2) % UInt8)
-        output[outputindex] = fb
+        @inbounds output[outputindex] = fb
     else
         count = 0
         base = outputindex
         while n > 0
-            output[outputindex+=1] = n % UInt8
+            @inbounds output[outputindex+=1] = n % UInt8
             n >>= 8; count += 1;
         end
-        output[base] = SNAPPY_LITERAL | (((59+count) << 2) % UInt8)
+        @inbounds output[base] = SNAPPY_LITERAL | (((59+count) << 2) % UInt8)
     end
-    copy!(output, outputindex+=1, literal, 1, len)
+    unsafe_copy!(output, outputindex+=1, input, inputindex, len)
     return outputindex + len
 end
 
 @inline function emit_copy_upto_64!(output, outputindex, offset, len)
     if len < 12 && offset < 2048
-        output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
-        output[outputindex+=1] = (offset) % UInt8
+        @inbounds output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
+        @inbounds output[outputindex+=1] = (offset) % UInt8
     else
-        output[outputindex] =  (SNAPPY_COPY_2_BYTE_OFFSET + ((len - 1) << 2)) % UInt8
-        output[outputindex+=1] = (offset) % UInt8
-        output[outputindex+=1] = (offset >>> 8) % UInt8
+        @inbounds output[outputindex] =  (SNAPPY_COPY_2_BYTE_OFFSET + ((len - 1) << 2)) % UInt8
+        @inbounds output[outputindex+=1] = (offset) % UInt8
+        @inbounds output[outputindex+=1] = (offset >>> 8) % UInt8
     end
     return outputindex + 1
 end
@@ -183,7 +183,7 @@ end
 @inline function find_match_length(s1::AbstractArray, i1::Integer, s2::AbstractArray, i2::Integer)
     # naive implementation, but also the fastest I've tried so far
     matched = 0
-    while i2 <= length(s2) && s1[i1] == s2[i2]
+    @inbounds while i2 <= length(s2) && s1[i1] == s2[i2]
         matched += 1
         i1 += 1
         i2 += 1

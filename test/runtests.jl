@@ -21,7 +21,7 @@ using Base.Test
 
     for file in testfiles
         raw = read("$(@__DIR__)/testdata/$(file)")
-        @test raw == uncompress(compress(raw));
+        @test hash(raw) == hash(uncompress(compress(raw)));
     end
 end
 
