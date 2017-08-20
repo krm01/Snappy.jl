@@ -3,10 +3,9 @@ if VERSION < v"0.6"
     ⊻ = $
 end
 
-const global K_BLOCK_SIZE = 1 << 15
+const global K_BLOCK_SIZE = 1 << 16
 const global K_INPUT_MARGIN_BYTES = 15
 const global K_MAX_HASH_TABLE_SIZE = 1 << 14
-const global K_MAXIMUM_TAG_LENGTH = 5
 
 const global SNAPPY_LITERAL = 0x00
 const global SNAPPY_COPY_1_BYTE_OFFSET = 0x01
