@@ -239,10 +239,11 @@ function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip::I
             ip += literal_length
         else
             copy_offset = (entry & 0x700)
-            if op + len > op_limit+1 || op - (copy_offset+trailer) < 0
+            op_offset = op - (copy_offset + trailer)
+            if op + len > op_limit+1 || op_offset < 1 || op_offset > op_limit+1
                 return 0 # data corruption
             end
-            op = incremental_copy_slow!(output, op, output, op - (copy_offset + trailer), len)
+            op = incremental_copy_slow!(output, op, output, op_offset, len)
         end
     end
     return op
