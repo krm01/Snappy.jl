@@ -24,7 +24,9 @@ using Base.Test
     ]
     for file in testfiles
         raw = read("$(Base.source_dir())/testdata/$(file)")
-        @test hash(raw) == hash(uncompress(compress(raw)));
+        x = compress(raw)
+        @test length(x) < length(raw);
+        @test hash(raw) == hash(uncompress(x));
     end
 end
 @testset "invalid_data_tests                " begin
@@ -49,6 +51,7 @@ end
     dictionary = [rand(UInt8, rand(1:wordsize)) for _ in 1:dictsize]
     for i in 1:100
         raw = vcat((dictionary[rand(1:dictsize)] for _ in 1:rand(1:maxwords))...)
-        @test hash(raw) == hash(uncompress(compress(raw)));
+        x = compress(raw)
+        @test hash(raw) == hash(uncompress(x));
     end
 end

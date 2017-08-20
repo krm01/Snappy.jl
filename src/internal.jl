@@ -92,9 +92,20 @@ function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, 
                 # early exit
                 (next_ip > ip_limit) && @goto emit_remainder
 
+                # the table needs to hold indices up to 65536, but is constrained to a UInt16.
+                # so we subtract 1 when storing, and add 1 when retrieving. the trick is that
+                # +1 should only happen when retrieving values that have already been stored,
+                # that is to say, the default value needs to be 0. so rather than filling the
+                # array with 0's, fill it with 0xffff instead, and force the overflow back to 0.
+                # in this case the addition is not associative, the +1 needs to evaluate on the
+                # table first to force the overflow, and only then then add to base_ip.
+                #
+                # it is.. unfortunate that array indices are 1-based. the rest of the code can likely
+                # be refactored and made more better, but as most of it is a ported from C, it is
+                # easier to handle it this way for now.
                 next_hash = hashdword(load32u(input, next_ip), shift)
-                candidate = base_ip + table[cur_hash+1]
-                table[cur_hash+1] = ip - base_ip
+                candidate = base_ip + (table[cur_hash+1] + 0x0001)
+                table[cur_hash+1] = (ip - base_ip) - 1
 
                 (load32u(input, candidate) == load32u(input,ip)) && break
             end
@@ -112,9 +123,9 @@ function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, 
                 prev_hash = hashdword(load32u(input, ip-1), shift)
                 input_bytes = load32u(input, ip)
                 cur_hash = hashdword(input_bytes, shift)
-                table[prev_hash+1] = ip - base_ip - 1
-                candidate = base_ip + table[cur_hash+1]
-                table[cur_hash+1] = ip - base_ip
+                table[prev_hash+1] = ip - base_ip - 1 - 1
+                candidate = base_ip + (table[cur_hash+1] + 0x0001)
+                table[cur_hash+1] = ip - base_ip - 1
 
                 (input_bytes != load32u(input, candidate)) && break
             end

@@ -22,7 +22,7 @@ function compress(input::Vector{UInt8})
     table = alloc_hashtable(sourcelen)
 
     for i in 1:K_BLOCK_SIZE+1:sourcelen
-        fill!(table, 0)
+        fill!(table, 0xffff)
         outputindex = compress_fragment!(input, i, min(i+K_BLOCK_SIZE, endof(input)),
             output, outputindex, table)
     end
