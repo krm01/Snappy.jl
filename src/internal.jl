@@ -60,7 +60,7 @@ const global CHAR_TABLE = [
     return a0 | a1 | a2 | a3
 end
 
-@inline hashdword(bytes::UInt32, shift::UInt32) = (bytes * 0x1e35a7bd) >> shift
+@inline hashdword(bytes::UInt32, shift::Integer) = (bytes * 0x1e35a7bd) >> shift
 @inline log2floor(n::UInt32) = n == 0 ? -1 : 31 ⊻ leading_zeros(n)
 
 function alloc_hashtable(n::Integer)
@@ -71,63 +71,59 @@ function alloc_hashtable(n::Integer)
     return Vector{UInt16}(htsize)
 end
 
-function compress_fragment!(vinput::Vector{UInt8}, output::Vector{UInt8}, outputindex::Integer, table::Vector{UInt16})
-    local shift::UInt32 = 32 - log2floor(length(table) % UInt32)
-    ip = candidate = next_emit = base_ip = 1::Int
-    ip_end = length(vinput)
+function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, output::Vector{UInt8}, outputindex::Integer, table::Vector{UInt16})
+    shift = 32 - log2floor(convert(UInt32,length(table)))
+    candidate = next_emit = base_ip = ip
+    input_size = ip_end-ip+1
     ip_limit = ip_end - K_INPUT_MARGIN_BYTES
-    if length(vinput) >= K_INPUT_MARGIN_BYTES
+
+    if input_size >= K_INPUT_MARGIN_BYTES
         while true
-            ip += 1
-            next_hash = hashdword(load32u(vinput, ip), shift)
+            next_hash = hashdword(load32u(input, ip+=1), shift)
             next_ip = ip
 
-            matchfound = false
             skip = 32
             while true
                 ip = next_ip
                 cur_hash = next_hash
                 bytes_between_hash_lookups = skip >> 5
-                skip += bytes_between_hash_lookups
+                skip += 1
                 next_ip = ip + bytes_between_hash_lookups
 
                 # early exit
-                (next_ip > ip_limit) && break
+                (next_ip > ip_limit) && @goto emit_remainder
 
-                next_hash = hashdword(load32u(vinput, next_ip), shift)
+                next_hash = hashdword(load32u(input, next_ip), shift)
                 candidate = base_ip + table[cur_hash+1]
                 table[cur_hash+1] = ip - base_ip
 
-                if load32u(vinput, candidate) == load32u(vinput,ip)
-                    matchfound = true
-                    outputindex = emit_literal!(output, outputindex, vinput, next_emit, ip-next_emit)
-                    break
-                end
+                (load32u(input, candidate) == load32u(input,ip)) && break
             end
+            outputindex = emit_literal!(output, outputindex, input, next_emit, ip-next_emit)
 
-            while matchfound
-                matched = 4 + find_match_length(vinput, candidate+4, vinput, ip+4)
+            while true
+                matched = 4 + find_match_length(input, candidate+4, ip+4, ip_end)
                 outputindex = emit_copy!(output, outputindex, ip - candidate, matched)
                 ip += matched
                 next_emit = ip
 
                 # potential early exit
-                (ip >= ip_limit) && break
+                (ip >= ip_limit) && @goto emit_remainder
 
-                prev_hash = hashdword(load32u(vinput, ip-1), shift)
-                input_bytes = load32u(vinput, ip)
+                prev_hash = hashdword(load32u(input, ip-1), shift)
+                input_bytes = load32u(input, ip)
                 cur_hash = hashdword(input_bytes, shift)
                 table[prev_hash+1] = ip - base_ip - 1
                 candidate = base_ip + table[cur_hash+1]
                 table[cur_hash+1] = ip - base_ip
 
-                (input_bytes != load32u(vinput, candidate)) && break
+                (input_bytes != load32u(input, candidate)) && break
             end
-            (ip > ip_limit) && break
         end
     end
-    if next_emit <= length(vinput)
-        outputindex = emit_literal!(output, outputindex, vinput, next_emit, ip_end-next_emit+1)
+    @label emit_remainder
+    if next_emit <= ip_end
+        outputindex = emit_literal!(output, outputindex, input, next_emit, ip_end-next_emit+1)
     end
     return outputindex
 end
@@ -180,10 +176,10 @@ end
     return outputindex
 end
 
-@inline function find_match_length(s1::AbstractArray, i1::Integer, s2::AbstractArray, i2::Integer)
+@inline function find_match_length(a::AbstractArray, i1::Integer, i2::Integer, limit::Integer)
     # naive implementation, but also the fastest I've tried so far
     matched = 0
-    while i2 <= length(s2) && s1[i1] == s2[i2]
+    while i2 <= limit && a[i1] == a[i2]
         matched += 1
         i1 += 1
         i2 += 1

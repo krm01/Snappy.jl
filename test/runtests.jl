@@ -3,7 +3,7 @@ include("../src/Snappy.jl")
 using Snappy
 using Base.Test
 
-@testset "round_trip_compression_tests" begin
+@testset "round_trip_compression_tests      " begin
 
     testfiles = [
         "alice29.txt",
@@ -17,18 +17,17 @@ using Base.Test
         "paper-100k.pdf",
         "plrabn12.txt",
         "urls.10K",
-
         "random1.bin",
         "random2.bin",
         "random3.bin",
+        "smallrandom1.bin",
     ]
     for file in testfiles
         raw = read("$(Base.source_dir())/testdata/$(file)")
         @test hash(raw) == hash(uncompress(compress(raw)));
     end
 end
-
-@testset "invalid_data_tests" begin
+@testset "invalid_data_tests                " begin
 
     testfiles = [
         "baddata1.snappy",
