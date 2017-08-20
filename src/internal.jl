@@ -208,27 +208,29 @@ end
 end
 
 function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip::Integer)
-
     ip_limit = endof(input)
     op = start(output)
     op_limit = endof(output)
-
-    # extending the input artificially with this 4 byte buffer ensures the tag can always
-    # be read from 4 bytes of the input stream, even if there are fewer than four bytes left.
-    # this is faster than a conditional check during the loop.
-    append!(input, zeros(UInt8, 4))
 
     while ip < ip_limit
 
         c = input[ip]
         ip += 1
-
-        tag = load32u(input, ip)
-
         entry = CHAR_TABLE[c+1]
-        trailer = tag & WORDMASK[(entry >> 11)+1]
         len = entry & 0xff
-        ip += (entry >> 11)
+        taglen = entry >> 11
+
+        if ip+4 > ip_limit
+            # pad the end of the input with 0s if the remaining buffer is too small. this
+            # code path is uncommon so the easy way out here isn't devastating to performance,
+            # but certainly a place for optimization later.
+            tag = load32u(vcat(input[ip:ip_limit], zeros(UInt8, 4)), 1)
+        else
+            tag = load32u(input, ip)
+        end
+
+        trailer = tag & WORDMASK[taglen+1]
+        ip += taglen
 
         if ((c & 0x3) % UInt8) == SNAPPY_LITERAL
             literal_length = len + trailer
