@@ -5,26 +5,32 @@ const global K_MAX32 = 5
     parse32(buf::Vector{UInt8}, offset::UInt)
 
 Reads and returns a varint32 from `buf`. Raises an error if no varint
-can be parsed.
-RETURNS: (varint, nBytesRead)
+can be parsed. Returns (varint, nBytesRead)
 """
 @inline function parse32(buf::Vector{UInt8}, offset::Integer)
+    offset > length(buf) && @goto failure
     local b::UInt32 = convert(UInt32, buf[offset])
     local result::UInt32 = b & 0x7f
+
     (b < 0x80) && return (result, 1)
+    (offset+=1) > length(buf) && @goto failure
 
-    b = buf[2]; result |= (b & 0x7f) << 7
+    b = buf[offset]; result |= (b & 0x7f) << 7
     (b < 0x80) && return (result, 2)
+    (offset+=1) > length(buf) && @goto failure
 
-    b = buf[3]; result |= (b & 0x7f) << 14
+    b = buf[offset]; result |= (b & 0x7f) << 14
     (b < 0x80) && return (result, 3)
+    (offset+=1) > length(buf) && @goto failure
 
-    b = buf[4]; result |= (b & 0x7f) << 21
+    b = buf[offset]; result |= (b & 0x7f) << 21
     (b < 0x80) && return (result, 4)
+    (offset+=1) > length(buf) && @goto failure
 
-    b = buf[5]; result |= (b & 0x7f) << 28
+    b = buf[offset]; result |= (b & 0x7f) << 28
     (b < 0x10) && return (result, 5)
 
+    @label failure
     error("Could not decode varint32.")
 end
 
@@ -59,4 +65,3 @@ just past the last byte of the varint32.
         end
     return offset + 1
 end
-

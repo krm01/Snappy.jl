@@ -17,7 +17,7 @@ function compress(input::Vector{UInt8})
     end
 
     # preallocate the output buffer, and resize down afterwards. faster than vcat'ing dynamic arrays I think
-    output = Vector{UInt8}(maxlength_compressed(sourcelen))
+    output = zeros(UInt8, maxlength_compressed(sourcelen))
     outputindex = encode32!(output, 1, sourcelen)
     table = alloc_hashtable(sourcelen)
 
@@ -38,7 +38,7 @@ end
 
 function uncompress(input::Vector{UInt8})
     output_size, offset = length_uncompressed(input)
-    output = Vector{UInt8}(output_size)
+    output = zeros(UInt8, output_size)
     uncompressed_len = decompress_all_tags!(output, input, start(input) + offset)
     (output_size != uncompressed_len-1) && error("Invalid input.")
     return output
