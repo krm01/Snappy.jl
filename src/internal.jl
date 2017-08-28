@@ -3,6 +3,9 @@ if VERSION < v"0.6"
     ⊻ = $
 end
 
+const global IS_LITTLE_ENDIAN = Base.ENDIAN_BOM == 0x04030201
+const global IS_64_BIT = Sys.WORD_SIZE == 64
+
 const global K_BLOCK_SIZE = 1 << 16
 const global K_INPUT_MARGIN_BYTES = 15
 const global K_MAX_HASH_TABLE_SIZE = 1 << 14
@@ -12,11 +15,11 @@ const global SNAPPY_COPY_1_BYTE_OFFSET = 0x01
 const global SNAPPY_COPY_2_BYTE_OFFSET = 0x02
 const global SNAPPY_COPY_4_BYTE_OFFSET = 0x03
 
-const global WORDMASK = [
+const global WORDMASK = UInt32[
     0x00000000, 0x000000ff, 0x0000ffff, 0x00ffffff, 0xffffffff
-]::Vector{UInt32}
+]
 
-const global CHAR_TABLE = [
+const global CHAR_TABLE = UInt16[
     0x0001, 0x0804, 0x1001, 0x2001, 0x0002, 0x0805, 0x1002, 0x2002,
     0x0003, 0x0806, 0x1003, 0x2003, 0x0004, 0x0807, 0x1004, 0x2004,
     0x0005, 0x0808, 0x1005, 0x2005, 0x0006, 0x0809, 0x1006, 0x2006,
@@ -49,14 +52,23 @@ const global CHAR_TABLE = [
     0x003b, 0x0f06, 0x103b, 0x203b, 0x003c, 0x0f07, 0x103c, 0x203c,
     0x0801, 0x0f08, 0x103d, 0x203d, 0x1001, 0x0f09, 0x103e, 0x203e,
     0x1801, 0x0f0a, 0x103f, 0x203f, 0x2001, 0x0f0b, 0x1040, 0x2040,
-]::Vector{UInt16}
+]
 
 @inline function load32u(a::AbstractArray, i::Integer)
-    a0 = UInt32(a[i])
-    a1 = UInt32(a[i+1]) << 8
-    a2 = UInt32(a[i+2]) << 16
-    a3 = UInt32(a[i+3]) << 24
-    return a0 | a1 | a2 | a3
+   return unsafe_load(reinterpret(Ptr{UInt32}, pointer(a,i)))
+end
+@inline function load64u(a::AbstractArray, i::Integer)
+   return unsafe_load(reinterpret(Ptr{UInt64}, pointer(a,i)))
+end
+
+if IS_LITTLE_ENDIAN
+    @inline function store32u!(a::AbstractArray, i::Integer, u::UInt32)
+        unsafe_store!(reinterpret(Ptr{UInt32}, pointer(a, i)), u)
+    end
+else
+    @inline function store32u!(a::AbstractArray, i::Integer, u::UInt32)
+        unsafe_store!(reinterpret(Ptr{UInt32}, pointer(a, i)), ntoh(u))
+    end
 end
 
 @inline hashdword(bytes::UInt32, shift::Integer) = (bytes * 0x1e35a7bd) >> shift
@@ -67,7 +79,7 @@ function alloc_hashtable(n::Integer)
     while htsize < K_MAX_HASH_TABLE_SIZE && htsize < n
         htsize <<= 1
     end
-    return Vector{UInt16}(htsize)
+    return zeros(UInt16, htsize)
 end
 
 function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, output::Vector{UInt8}, outputindex::Integer, table::Vector{UInt16})
@@ -159,13 +171,14 @@ end
 @inline function emit_copy_upto_64!(output::Vector{UInt8}, outputindex::Integer, offset::Integer, len::Integer)
     if len < 12 && offset < 2048
         output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
-        output[outputindex+=1] = (offset) % UInt8
+        output[outputindex+1] = (offset & 0xff) % UInt8
+        outputindex += 2
     else
-        output[outputindex] =  (SNAPPY_COPY_2_BYTE_OFFSET + ((len - 1) << 2)) % UInt8
-        output[outputindex+=1] = (offset) % UInt8
-        output[outputindex+=1] = (offset >>> 8) % UInt8
+        local u::UInt32 = SNAPPY_COPY_2_BYTE_OFFSET + ((len - 1) << 2) + (offset << 8)
+        store32u!(output, outputindex, u)
+        outputindex += 3
     end
-    return outputindex + 1
+    return outputindex
 end
 
 @inline function emit_copy!(output::Vector{UInt8}, outputindex::Integer, offset::Integer, len::Integer)
@@ -186,15 +199,59 @@ end
     return outputindex
 end
 
-@inline function find_match_length(a::AbstractArray, i1::Integer, i2::Integer, limit::Integer)
-    # naive implementation, but also the fastest I've tried so far
-    matched = 0
-    while i2 <= limit && a[i1] == a[i2]
-        matched += 1
-        i1 += 1
-        i2 += 1
+if IS_64_BIT && IS_LITTLE_ENDIAN
+# Fast implementation for 64bit little endian
+    @inline function find_match_length(a::Vector{UInt8}, i1::Integer, i2::Integer, limit::Integer)
+        matched = 0
+
+        # check (limit - 7) instead of (limit - 8) because 1-based arrays
+        if i2 <= limit - 7
+            a1 = load64u(a, i1)
+            a2 = load64u(a, i2)
+            if a1 != a2
+                return trailing_zeros(a1 ⊻ a2) >> 3
+            else
+                i2 += 8
+                matched = 8
+            end
+        end
+        while i2 <= limit - 7
+            if load64u(a, i2) == load64u(a, i1+matched)
+                i2 += 8
+                matched += 8
+            else
+                x = load64u(a, i2) ⊻ load64u(a, i1+matched)
+                matching_bits = trailing_zeros(x)
+                matched += (matching_bits >> 3)
+                return matched
+            end
+        end
+        while i2 <= limit && a[i1+matched] == a[i2]
+            i2 += 1
+            matched += 1
+        end
+        return matched
     end
-    return matched
+else
+# 32bit version
+    @inline function find_match_length(a::Vector{UInt8}, i1::Integer, i2::Integer, limit::Integer)
+        matched = 0
+        while i2 <= limit - 4 && load32u(a, i2) == load32u(a, i1+matched)
+            i2 += 4
+            matched += 4
+        end
+        if IS_LITTLE_ENDIAN && i2 <= limit - 4
+            x = load32u(a, i2) ⊻ load32u(a, i1+matched)
+            matching_bits = trailing_zeros(x)
+            matched += (matching_bits >> 3)
+        else
+            while i2 <= limit && a[i1+matched] == a[i2]
+                i2 += 1
+                matched += 1
+            end
+        end
+        return matched
+    end
 end
 
 @inline function incremental_copy_slow!(dst::AbstractArray, di::Integer, src::AbstractArray, si::Integer, len::Integer)
