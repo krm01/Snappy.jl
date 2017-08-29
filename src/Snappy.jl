@@ -32,7 +32,7 @@ end
 
 
 function maxlength_compressed(sourcelen::Integer)
-    return 32 + sourcelen + (sourcelen ÷ 6)
+    return 32 + sourcelen + (sourcelen ÷ 6) # this is division, that op sure looks like plus though
 end
 
 

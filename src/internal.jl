@@ -1,10 +1,10 @@
 
-if VERSION < v"0.6"
+@static if VERSION < v"0.6"
     ⊻ = $
 end
 
-const global IS_LITTLE_ENDIAN = Base.ENDIAN_BOM == 0x04030201
-const global IS_64_BIT = Sys.WORD_SIZE == 64
+const global IS_LITTLE_ENDIAN = (Base.ENDIAN_BOM == 0x04030201)
+const global IS_64_BIT = (Sys.WORD_SIZE == 64)
 
 const global K_BLOCK_SIZE = 1 << 16
 const global K_INPUT_MARGIN_BYTES = 15
@@ -61,7 +61,7 @@ end
    return unsafe_load(reinterpret(Ptr{UInt64}, pointer(a,i)))
 end
 
-if IS_LITTLE_ENDIAN
+@static if IS_LITTLE_ENDIAN
     @inline function store32u!(a::AbstractArray, i::Integer, u::UInt32)
         unsafe_store!(reinterpret(Ptr{UInt32}, pointer(a, i)), u)
     end
@@ -199,7 +199,7 @@ end
     return outputindex
 end
 
-if IS_64_BIT && IS_LITTLE_ENDIAN
+@static if IS_64_BIT && IS_LITTLE_ENDIAN
 # Fast implementation for 64bit little endian
     @inline function find_match_length(a::Vector{UInt8}, i1::Integer, i2::Integer, limit::Integer)
         matched = 0
