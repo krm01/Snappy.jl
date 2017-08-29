@@ -55,19 +55,34 @@ const global CHAR_TABLE = UInt16[
 ]
 
 @inline function load32u(a::AbstractArray, i::Integer)
-   return unsafe_load(reinterpret(Ptr{UInt32}, pointer(a,i)))
+    return unsafe_load(reinterpret(Ptr{UInt32}, pointer(a,i)))
 end
 @inline function load64u(a::AbstractArray, i::Integer)
-   return unsafe_load(reinterpret(Ptr{UInt64}, pointer(a,i)))
+    return unsafe_load(reinterpret(Ptr{UInt64}, pointer(a,i)))
+end
+@inline function load128u(a::AbstractArray, i::Integer)
+    return unsafe_load(reinterpret(Ptr{UInt128}, pointer(a, i)))
 end
 
 @static if IS_LITTLE_ENDIAN
     @inline function store32u!(a::AbstractArray, i::Integer, u::UInt32)
         unsafe_store!(reinterpret(Ptr{UInt32}, pointer(a, i)), u)
     end
+    @inline function unaligned_copy_64u!(dst::Vector{UInt8}, di::Integer, src::Vector{UInt8}, si::Integer)
+        unsafe_store!(reinterpret(Ptr{UInt64}, pointer(dst, di)), load64u(src, si))
+    end
+    @inline function unaligned_copy_128u!(dst::Vector{UInt8}, di::Integer, src::Vector{UInt8}, si::Integer)
+        unsafe_store!(reinterpret(Ptr{UInt128}, pointer(dst, di)), load128u(src, si))
+    end
 else
     @inline function store32u!(a::AbstractArray, i::Integer, u::UInt32)
         unsafe_store!(reinterpret(Ptr{UInt32}, pointer(a, i)), ntoh(u))
+    end
+    @inline function unaligned_copy_64u!(dst::Vector{UInt8}, di::Integer, src::Vector{UInt8}, si::Integer)
+        unsafe_store!(reinterpret(Ptr{UInt64}, pointer(dst, di)), ntoh(load64u(src, si)))
+    end
+    @inline function unaligned_copy_128u!(dst::Vector{UInt8}, di::Integer, src::Vector{UInt8}, si::Integer)
+        unsafe_store!(reinterpret(Ptr{UInt128}, pointer(dst, di)), ntoh(load128u(src, si)))
     end
 end
 
@@ -88,7 +103,7 @@ function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, 
     input_size = ip_end-ip+1
     ip_limit = ip_end - K_INPUT_MARGIN_BYTES
 
-    if input_size >= K_INPUT_MARGIN_BYTES
+    @inbounds if input_size >= K_INPUT_MARGIN_BYTES
         while true
             next_hash = hashdword(load32u(input, ip+=1), shift)
             next_ip = ip
@@ -121,7 +136,7 @@ function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, 
 
                 (load32u(input, candidate) == load32u(input,ip)) && break
             end
-            outputindex = emit_literal!(output, outputindex, input, next_emit, ip-next_emit)
+            outputindex = emit_literal!(output, outputindex, input, next_emit, ip-next_emit, true)
 
             while true
                 matched = 4 + find_match_length(input, candidate+4, ip+4, ip_end)
@@ -145,13 +160,18 @@ function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, 
     end
     @label emit_remainder
     if next_emit <= ip_end
-        outputindex = emit_literal!(output, outputindex, input, next_emit, ip_end-next_emit+1)
+        outputindex = emit_literal!(output, outputindex, input, next_emit, ip_end-next_emit+1, false)
     end
     return outputindex
 end
 
-@inline function emit_literal!(output::Vector{UInt8}, outputindex::Integer, input::Vector{UInt8}, inputindex::Integer, len::Integer)
+@inline function emit_literal!(output::Vector{UInt8}, outputindex::Integer, input::Vector{UInt8}, inputindex::Integer, len::Integer, allow_fast_path::Bool)
     local n::UInt32 = (len - 1) % UInt32
+    if (allow_fast_path && len <= 16)
+        output[outputindex] = SNAPPY_LITERAL | ((n << 2) % UInt8)
+        unaligned_copy_128u!(output, outputindex+=1, input, inputindex)
+        return outputindex + len
+    end
     if len < 60
         fb = SNAPPY_LITERAL | ((n << 2) % UInt8)
         output[outputindex] = fb
