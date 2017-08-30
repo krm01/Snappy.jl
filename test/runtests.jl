@@ -79,7 +79,7 @@ end
     for file in testfiles
         raw = read("$(Base.source_dir())/testdata/$(file)")
         @test Snappy.length_uncompressed(raw)[1] < (1<<20)
-        @test_throws ErrorException uncompress(raw);
+        @test_throws ErrorException uncompress(raw)
     end
 
     # corrupted varint tests

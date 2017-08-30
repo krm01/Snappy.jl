@@ -291,61 +291,51 @@ function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip::I
         if ip+4 <= ip_limit
             tag = load32u(input, ip)
         else
-            # pad the end of the input with 0s if the remaining buffer is too small. this
-            # code path is uncommon so the easy way out here isn't devastating to performance,
-            # but certainly a place for optimization later.
             tag = load32u(vcat(input[ip:ip_limit], zeros(UInt8, 4)), 1)
         end
 
         trailer = tag & WORDMASK[taglen+1]
         ip += taglen
 
-        # Ratio of iterations that have LITERAL vs non-LITERAL for different
-        # inputs.
-        #
-        # input          LITERAL  NON_LITERAL
-        # -----------------------------------
-        # html|html4|cp   23%        77%
-        # urls            36%        64%
-        # jpg             47%        53%
-        # pdf             19%        81%
-        # txt[1-4]        25%        75%
-        # pb              24%        76%
-        # bin             24%        76%
-
-        # based on data above, slight gain on branch prediction to check non-literals first.
-        # at least, I hope the compiler is laying it out like that.
         if ((c & 0x3) % UInt8) != SNAPPY_LITERAL
-            copy_offset = (entry & 0x700) + trailer
-            op_offset = op - copy_offset
-            if op + len > op_limit+1 || op_offset < 1 || op_offset > op_limit+1 || copy_offset == 0
-                return 0 # data corruption
-            end
-            op = incremental_copy_slow!(output, op, output, op_offset, len)
+            copy_offset = (entry & 0x700)
+            op = copy_copy!(output, op, copy_offset + trailer, len)
         else
-            literal_length = len + trailer
-            op, ip = copy_literal!(output, op, input, ip, literal_length)
+            op, ip = copy_literal!(output, op, input, ip, len + trailer)
         end
     end
     return op
 end
 
-@inline function incremental_copy_slow!(dst::AbstractArray, di::Integer, src::AbstractArray, si::Integer, len::Integer)
-    # TODO: or IS IT? just use this everywhere for now, optimize later.
-    for _ in 1:len
-        dst[di] = src[si]
-        di += 1
-        si += 1
+
+@inline function copy_copy!(output::Vector{UInt8}, op::Integer, offset::Integer, len::Integer)
+    avail_out = endof(output) - op + 1
+    (op - start(output) <= offset - 0x01) && error("Invalid input: corrupt copy offset")
+    if len <= 16 && offset >= 8 && avail_out >= 16
+        # use two 64s instead of a 128, because op - offset can be < 16. A 128 copy might overwrite into op.
+        unaligned_copy_64u!(output, op, output, op - offset)
+        unaligned_copy_64u!(output, op + 8, output, op - offset + 8)
+    else
+        (avail_out < len) && error("Invalid input: corrupt copy length")
+        incremental_copy!(output, op, op - offset, len)
     end
-    return di
+    return op + len
 end
+
+
+@inline function incremental_copy!(output::Vector{UInt8}, op::Integer, src::Integer, len::Integer)
+    @inbounds for i in 0:len-1
+        output[op+i] = output[src+i]
+    end
+end
+
 
 @inline function copy_literal!(output::Vector{UInt8}, op::Integer, input::Vector{UInt8}, ip::Integer, len::Integer)
     avail_out = endof(output) - op + 1
     avail_in = endof(input) - ip + 1
     (avail_out < len || avail_in < len) && error("Invalid input: corrupt literal")
 
-    # super fast path, can copy more than the literal but that's OK here
+    # fast path, can copy more than the literal but that's OK here. most literals are short.
     if len <= 16 && avail_out >= 16 && avail_in >= 16
         unaligned_copy_128u!(output, op, input, ip)
     else
