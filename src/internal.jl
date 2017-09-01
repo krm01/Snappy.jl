@@ -3,8 +3,7 @@
     ⊻ = $
 end
 
-const global IS_LITTLE_ENDIAN = (Base.ENDIAN_BOM == 0x04030201)
-const global IS_64_BIT = (Sys.WORD_SIZE == 64)
+include("memory.jl")
 
 const global K_BLOCK_SIZE = 1 << 16
 const global K_INPUT_MARGIN_BYTES = 15
@@ -54,51 +53,20 @@ const global CHAR_TABLE = UInt16[
     0x1801, 0x0f0a, 0x103f, 0x203f, 0x2001, 0x0f0b, 0x1040, 0x2040,
 ]
 
-@inline function load32u(a::AbstractArray, i::Integer)
-    return unsafe_load(reinterpret(Ptr{UInt32}, pointer(a,i)))
-end
-@inline function load64u(a::AbstractArray, i::Integer)
-    return unsafe_load(reinterpret(Ptr{UInt64}, pointer(a,i)))
-end
-@inline function load128u(a::AbstractArray, i::Integer)
-    return unsafe_load(reinterpret(Ptr{UInt128}, pointer(a, i)))
-end
 
-@static if IS_LITTLE_ENDIAN
-    @inline function store32u!(a::AbstractArray, i::Integer, u::UInt32)
-        unsafe_store!(reinterpret(Ptr{UInt32}, pointer(a, i)), u)
-    end
-    @inline function unaligned_copy_64u!(dst::Vector{UInt8}, di::Integer, src::Vector{UInt8}, si::Integer)
-        unsafe_store!(reinterpret(Ptr{UInt64}, pointer(dst, di)), load64u(src, si))
-    end
-    @inline function unaligned_copy_128u!(dst::Vector{UInt8}, di::Integer, src::Vector{UInt8}, si::Integer)
-        unsafe_store!(reinterpret(Ptr{UInt128}, pointer(dst, di)), load128u(src, si))
-    end
-else
-    @inline function store32u!(a::AbstractArray, i::Integer, u::UInt32)
-        unsafe_store!(reinterpret(Ptr{UInt32}, pointer(a, i)), ntoh(u))
-    end
-    @inline function unaligned_copy_64u!(dst::Vector{UInt8}, di::Integer, src::Vector{UInt8}, si::Integer)
-        unsafe_store!(reinterpret(Ptr{UInt64}, pointer(dst, di)), ntoh(load64u(src, si)))
-    end
-    @inline function unaligned_copy_128u!(dst::Vector{UInt8}, di::Integer, src::Vector{UInt8}, si::Integer)
-        unsafe_store!(reinterpret(Ptr{UInt128}, pointer(dst, di)), ntoh(load128u(src, si)))
-    end
-end
-
-@inline hashdword(bytes::UInt32, shift::Integer) = (bytes * 0x1e35a7bd) >> shift
+@inline hashdword(bytes::UInt32, shift::Unsigned) = (bytes * 0x1e35a7bd) >> shift
 @inline log2floor(n::UInt32) = n == 0 ? -1 : 31 ⊻ leading_zeros(n)
 
-function alloc_hashtable(n::Integer)
+function alloc_hashtable(n::Unsigned)
     htsize = 256
     while htsize < K_MAX_HASH_TABLE_SIZE && htsize < n
-        htsize <<= 1
+        htsize <<= 0x01
     end
     return zeros(UInt16, htsize)
 end
 
-function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, output::Vector{UInt8}, outputindex::Integer, table::Vector{UInt16})
-    shift = 32 - log2floor(convert(UInt32,length(table)))
+function compress_fragment!(input::Vector{UInt8}, ip::Signed, ip_end::Signed, output::Vector{UInt8}, outputindex::Signed, table::Vector{UInt16})
+    local shift::UInt = 32 - log2floor(convert(UInt32,length(table)))
     candidate = next_emit = base_ip = ip
     input_size = ip_end-ip+1
     ip_limit = ip_end - K_INPUT_MARGIN_BYTES
@@ -112,7 +80,7 @@ function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, 
             while true
                 ip = next_ip
                 cur_hash = next_hash
-                bytes_between_hash_lookups = skip >> 5
+                bytes_between_hash_lookups = skip >> 0x05
                 skip += 1
                 next_ip = ip + bytes_between_hash_lookups
 
@@ -165,7 +133,7 @@ function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, 
     return outputindex
 end
 
-@inline function emit_literal!(output::Vector{UInt8}, outputindex::Integer, input::Vector{UInt8}, inputindex::Integer, len::Integer, allow_fast_path::Bool)
+@inline function emit_literal!(output::Vector{UInt8}, outputindex::Signed, input::Vector{UInt8}, inputindex::Signed, len::Signed, allow_fast_path::Bool)
     local n::UInt32 = (len - 1) % UInt32
     if (allow_fast_path && len <= 16)
         output[outputindex] = SNAPPY_LITERAL | ((n << 2) % UInt8)
@@ -184,11 +152,11 @@ end
         end
         output[base] = SNAPPY_LITERAL | (((59+count) << 2) % UInt8)
     end
-    unsafe_copy!(output, outputindex+=1, input, inputindex, len)
+    copy!(output, outputindex+=1, input, inputindex, len)
     return outputindex + len
 end
 
-@inline function emit_copy_upto_64!(output::Vector{UInt8}, outputindex::Integer, offset::Integer, len::Integer)
+@inline function emit_copy_upto_64!(output::Vector{UInt8}, outputindex::Signed, offset::Signed, len::Signed)
     if len < 12 && offset < 2048
         output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
         output[outputindex+1] = (offset & 0xff) % UInt8
@@ -201,7 +169,7 @@ end
     return outputindex
 end
 
-@inline function emit_copy!(output::Vector{UInt8}, outputindex::Integer, offset::Integer, len::Integer)
+@inline function emit_copy!(output::Vector{UInt8}, outputindex::Signed, offset::Signed, len::Signed)
     if len < 12
         outputindex = emit_copy_upto_64!(output, outputindex, offset, len)
         return outputindex
@@ -221,7 +189,7 @@ end
 
 @static if IS_64_BIT && IS_LITTLE_ENDIAN
 # Fast implementation for 64bit little endian
-    @inline function find_match_length(a::Vector{UInt8}, i1::Integer, i2::Integer, limit::Integer)
+    @inline function find_match_length(a::Vector{UInt8}, i1::Signed, i2::Signed, limit::Signed)
         matched = 0
 
         # check (limit - 7) instead of (limit - 8) because 1-based arrays
@@ -254,7 +222,7 @@ end
     end
 else
 # 32bit version
-    @inline function find_match_length(a::Vector{UInt8}, i1::Integer, i2::Integer, limit::Integer)
+    @inline function find_match_length(a::Vector{UInt8}, i1::Signed, i2::Signed, limit::Signed)
         matched = 0
         while i2 <= limit - 4 && load32u(a, i2) == load32u(a, i1+matched)
             i2 += 4
@@ -275,7 +243,7 @@ else
 end
 
 
-function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip::Integer)
+function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip::Signed)
     ip_limit = endof(input)
     op = start(output)
     op_limit = endof(output)
@@ -339,7 +307,7 @@ end
     if len <= 16 && avail_out >= 16 && avail_in >= 16
         unaligned_copy_128u!(output, op, input, ip)
     else
-        unsafe_copy!(output, op, input, ip, len)
+        copy!(output, op, input, ip, len)
     end
     return op+len, ip+len
 end

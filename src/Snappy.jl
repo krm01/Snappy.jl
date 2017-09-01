@@ -4,6 +4,10 @@ export
     compress,
     uncompress
 
+@static if VERSION < v"0.6"
+    ⊻ = $
+end
+
 include("varint.jl")
 include("internal.jl")
 
