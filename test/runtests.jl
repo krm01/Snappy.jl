@@ -24,9 +24,11 @@ using Base.Test
     ]
     for file in testfiles
         raw = read("$(Base.source_dir())/testdata/$(file)")
-        x = compress(raw)
-        @test length(x) < length(raw);
-        @test hash(raw) == hash(uncompress(x));
+        a = compress(raw)
+        b = uncompress(a)
+        @test hash(a) != hash(raw) # just make sure it isn't identity
+        @test hash(b) != hash(a)
+        @test hash(raw) == hash(b)
     end
 end
 
@@ -39,8 +41,11 @@ end
     dictionary = [rand(UInt8, rand(1:wordsize)) for _ in 1:dictsize]
     for i in 1:100
         raw = vcat((dictionary[rand(1:dictsize)] for _ in 1:rand(1:maxwords))...)
-        x = compress(raw)
-        @test hash(raw) == hash(uncompress(x));
+        a = compress(raw)
+        b = uncompress(a)
+        @test hash(a) != hash(raw)
+        @test hash(b) != hash(a)
+        @test hash(raw) == hash(b)
     end
 end
 
@@ -54,7 +59,7 @@ end
     dst[2] = ~dst[2]
     dst[4] = dst[3]
 
-    @test_throws ErrorException uncompress(dst);
+    @test_throws ErrorException uncompress(dst)
 
     # This is testing for a security bug - a buffer that decompresses to 100k
     # but we lie in the snappy header and only reserve 0 bytes of memory :)
@@ -62,13 +67,13 @@ end
     dst = compress(src)
     dst[1] = dst[2] = dst[3] = dst[4] = 0
 
-    @test_throws ErrorException uncompress(dst);
+    @test_throws ErrorException uncompress(dst)
 
     dst[1] = dst[2] = dst[3] = 0xff
     # This decodes to about 2 MB; much smaller, but should still fail.
     dst[4] = 0x00
 
-    @test_throws ErrorException uncompress(dst);
+    @test_throws ErrorException uncompress(dst)
 
     # try reading stuff in from a bad file.
     testfiles = [
@@ -122,15 +127,20 @@ end
     ])
 
     for raw in test_strings
-        x = compress(raw)
-        @test length(x) <= Snappy.maxlength_compressed(length(raw))
-        @test hash(raw) == hash(uncompress(x));
+        a = compress(raw)
+        b = uncompress(a)
+        @test hash(a) != hash(raw)
+        @test hash(b) != hash(a)
+        @test hash(raw) == hash(b)
     end
 
-    a = vcat([rand(UInt8, 4) for _ in 1:20000]...)
-    a = vcat(a, a)
-    x = compress(a)
-    @test length(x) <= Snappy.maxlength_compressed(length(a))
-    @test hash(a) == hash(uncompress(x))
+    # verify max blowup (lots of four-byte copies)
+    raw = reinterpret(UInt8, rand(UInt32, 20000))
+    raw = vcat(raw, flipdim(raw, 1))
+    a = compress(raw)
+    b = uncompress(a)
+    @test hash(a) != hash(raw)
+    @test hash(b) != hash(a)
+    @test hash(raw) == hash(b)
 
 end
