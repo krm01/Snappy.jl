@@ -155,7 +155,7 @@ end
 
     # encode a range of varint values
     buf = zeros(UInt8, 5)
-    for i in 0:31
+    for i in 0:30
         offset = Snappy.encode32!(buf, 1, UInt32(1 << i))
         val, offset2 = Snappy.parse32(buf, 1)
         @test val == UInt32(1 << i)
