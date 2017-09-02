@@ -24,6 +24,7 @@ const global IS_64_BIT = (Sys.WORD_SIZE == 64)
         unsafe_store!(reinterpret(Ptr{UInt128}, pointer(dst, di)), load128u(src, si))
     end
 else
+    # Big Endian
     @inline function load32u(a::Vector{UInt8}, i::Integer)
         return hton(unsafe_load(reinterpret(Ptr{UInt32}, pointer(a,i))))
     end

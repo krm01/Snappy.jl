@@ -13,12 +13,8 @@ include("internal.jl")
 
 
 function compress(input::Vector{UInt8})
-    local sourcelen::UInt32
-    try
-        sourcelen = convert(UInt32, length(input))
-    catch e::InexactError
-        error("Input too large.")
-    end
+    length(input) > typemax(UInt32) && error("Input too large.")
+    local sourcelen::UInt32 = length(input)
 
     # preallocate the output buffer, and resize down afterwards. faster than vcat'ing dynamic arrays I think
     output = zeros(UInt8, maxlength_compressed(sourcelen))
@@ -43,7 +39,7 @@ end
 function uncompress(input::Vector{UInt8})
     output_size, offset = length_uncompressed(input)
     output = zeros(UInt8, output_size)
-    uncompressed_len = decompress_all_tags!(output, input, start(input) + offset)
+    uncompressed_len = decompress_all_tags!(output, input, offset)
     (output_size != uncompressed_len-1) && error("Invalid input.")
     return output
 end
@@ -55,6 +51,6 @@ end
 
 
 # for convenience
-compress(input::String) = compress(convert(Vector{UInt8}, input))
+compress(input::String) = compress(Vector{UInt8}(input))
 
 end

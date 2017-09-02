@@ -39,7 +39,7 @@ end
     maxwords = 1 << 16
 
     dictionary = [rand(UInt8, rand(1:wordsize)) for _ in 1:dictsize]
-    for i in 1:100
+    for i in 1:50
         raw = vcat((dictionary[rand(1:dictsize)] for _ in 1:rand(1:maxwords))...)
         a = compress(raw)
         b = uncompress(a)
@@ -47,6 +47,16 @@ end
         @test hash(b) != hash(a)
         @test hash(raw) == hash(b)
     end
+    # run some of the tests using the string wrapper
+    for i in 1:50
+        raw = vcat((dictionary[rand(1:dictsize)] for _ in 1:rand(1:maxwords))...)
+        a = compress(String(raw))
+        b = uncompress(a)
+        @test hash(a) != hash(raw)
+        @test hash(b) != hash(a)
+        @test hash(raw) == hash(b)
+    end
+
 end
 
 @testset "corrupted data tests              " begin
@@ -114,7 +124,7 @@ end
 
 @testset "simple tests                      " begin
 
-    test_strings = map((e)->convert(Vector{UInt8},e), [
+    test_strings = map((e)->Vector{UInt8}(e), [
         "",
         "a",
         "ab",
@@ -143,13 +153,21 @@ end
     @test hash(b) != hash(a)
     @test hash(raw) == hash(b)
 
+    # encode a range of varint values
+    buf = zeros(UInt8, 5)
+    for i in 0:31
+        offset = Snappy.encode32!(buf, 1, UInt32(1 << i))
+        val, offset2 = Snappy.parse32(buf, 1)
+        @test val == UInt32(1 << i)
+        @test offset == offset2
+    end
 end
 
 @testset "find_match_length tests           " begin
 
     function test_find_match_length(a::String, b::String, limit::Int)
-        a = convert(Vector{UInt8}, a)
-        b = convert(Vector{UInt8}, b)
+        a = Vector{UInt8}(a)
+        b = Vector{UInt8}(b)
         c = vcat(a, b)
         return Snappy.find_match_length(c, start(a), endof(a)+1, endof(a)+limit)
     end
