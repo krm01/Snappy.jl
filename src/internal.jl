@@ -3,7 +3,15 @@
     ⊻ = $
 end
 
-include("memory.jl")
+const global IS_LITTLE_ENDIAN = (Base.ENDIAN_BOM == 0x04030201)
+const global IS_64_BIT = (Sys.WORD_SIZE == 64)
+
+if IS_LITTLE_ENDIAN && IS_64_BIT
+    include("fastmemory.jl")
+else
+    include("safememory.jl")
+end
+
 
 const global K_BLOCK_SIZE = 1 << 16
 const global K_INPUT_MARGIN_BYTES = 15
