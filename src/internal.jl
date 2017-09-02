@@ -65,7 +65,7 @@ function alloc_hashtable(n::Unsigned)
     return zeros(UInt16, htsize)
 end
 
-function compress_fragment!(input::Vector{UInt8}, ip::Signed, ip_end::Signed, output::Vector{UInt8}, outputindex::Signed, table::Vector{UInt16})
+function compress_fragment!(input::Vector{UInt8}, ip::Integer, ip_end::Integer, output::Vector{UInt8}, outputindex::Integer, table::Vector{UInt16})
     local shift::UInt = 32 - log2floor(convert(UInt32,length(table)))
     candidate = next_emit = base_ip = ip
     input_size = ip_end-ip+1
@@ -133,7 +133,7 @@ function compress_fragment!(input::Vector{UInt8}, ip::Signed, ip_end::Signed, ou
     return outputindex
 end
 
-@inline function emit_literal!(output::Vector{UInt8}, outputindex::Signed, input::Vector{UInt8}, inputindex::Signed, len::Signed, allow_fast_path::Bool)
+@inline function emit_literal!(output::Vector{UInt8}, outputindex::Integer, input::Vector{UInt8}, inputindex::Integer, len::Integer, allow_fast_path::Bool)
     local n::UInt32 = (len - 1) % UInt32
     if (allow_fast_path && len <= 16)
         output[outputindex] = SNAPPY_LITERAL | ((n << 2) % UInt8)
@@ -156,7 +156,7 @@ end
     return outputindex + len
 end
 
-@inline function emit_copy_upto_64!(output::Vector{UInt8}, outputindex::Signed, offset::Signed, len::Signed)
+@inline function emit_copy_upto_64!(output::Vector{UInt8}, outputindex::Integer, offset::Integer, len::Integer)
     if len < 12 && offset < 2048
         output[outputindex] = (SNAPPY_COPY_1_BYTE_OFFSET + ((len - 4) << 2) + ((offset >> 3) & 0xe0)) % UInt8
         output[outputindex+1] = (offset & 0xff) % UInt8
@@ -169,7 +169,7 @@ end
     return outputindex
 end
 
-@inline function emit_copy!(output::Vector{UInt8}, outputindex::Signed, offset::Signed, len::Signed)
+@inline function emit_copy!(output::Vector{UInt8}, outputindex::Integer, offset::Integer, len::Integer)
     if len < 12
         outputindex = emit_copy_upto_64!(output, outputindex, offset, len)
         return outputindex
@@ -189,7 +189,7 @@ end
 
 @static if IS_64_BIT && IS_LITTLE_ENDIAN
 # Fast implementation for 64bit little endian
-    @inline function find_match_length(a::Vector{UInt8}, i1::Signed, i2::Signed, limit::Signed)
+    @inline function find_match_length(a::Vector{UInt8}, i1::Integer, i2::Integer, limit::Integer)
         matched = 0
 
         # check (limit - 7) instead of (limit - 8) because 1-based arrays
@@ -222,7 +222,7 @@ end
     end
 else
 # 32bit version
-    @inline function find_match_length(a::Vector{UInt8}, i1::Signed, i2::Signed, limit::Signed)
+    @inline function find_match_length(a::Vector{UInt8}, i1::Integer, i2::Integer, limit::Integer)
         matched = 0
         while i2 <= limit - 4 && load32u(a, i2) == load32u(a, i1+matched)
             i2 += 4
@@ -243,7 +243,7 @@ else
 end
 
 
-function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip::Signed)
+function decompress_all_tags!(output::Vector{UInt8}, input::Vector{UInt8}, ip::Integer)
     ip_limit = endof(input)
     op = start(output)
     op_limit = endof(output)
