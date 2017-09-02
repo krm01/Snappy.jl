@@ -144,3 +144,108 @@ end
     @test hash(raw) == hash(b)
 
 end
+
+@testset "find_match_length tests           " begin
+
+    function test_find_match_length(a::String, b::String, limit::Int)
+        a = convert(Vector{UInt8}, a)
+        b = convert(Vector{UInt8}, b)
+        c = vcat(a, b)
+        return Snappy.find_match_length(c, start(a), endof(a)+1, endof(a)+limit)
+    end
+
+    # Hit s1_limit in 64-bit loop, hit s1_limit in single-character loop.
+    @test 6 == test_find_match_length("012345", "012345", 6)
+    @test 11 == test_find_match_length("01234567abc", "01234567abc", 11)
+
+    # Hit s1_limit in 64-bit loop, find a non-match in single-character loop.
+    @test 9 == test_find_match_length("01234567abc", "01234567axc", 9)
+
+    # Same, but edge cases.
+    @test 11 == test_find_match_length("01234567abc!", "01234567abc!", 11)
+    @test 11 == test_find_match_length("01234567abc!", "01234567abc?", 11)
+
+    # Find non-match at once in first loop.
+    @test 0 == test_find_match_length("01234567xxxxxxxx", "?1234567xxxxxxxx", 16)
+    @test 1 == test_find_match_length("01234567xxxxxxxx", "0?234567xxxxxxxx", 16)
+    @test 4 == test_find_match_length("01234567xxxxxxxx", "01237654xxxxxxxx", 16)
+    @test 7 == test_find_match_length("01234567xxxxxxxx", "0123456?xxxxxxxx", 16)
+
+    # Find non-match in first loop after one block.
+    @test 8 == test_find_match_length("abcdefgh01234567xxxxxxxx",
+                                   "abcdefgh?1234567xxxxxxxx", 24)
+    @test 9 == test_find_match_length("abcdefgh01234567xxxxxxxx",
+                                   "abcdefgh0?234567xxxxxxxx", 24)
+    @test 12 == test_find_match_length("abcdefgh01234567xxxxxxxx",
+                                    "abcdefgh01237654xxxxxxxx", 24)
+    @test 15 == test_find_match_length("abcdefgh01234567xxxxxxxx",
+                                    "abcdefgh0123456?xxxxxxxx", 24)
+
+    # 32-bit version:
+
+    # Short matches.
+    @test 0 == test_find_match_length("01234567", "?1234567", 8)
+    @test 1 == test_find_match_length("01234567", "0?234567", 8)
+    @test 2 == test_find_match_length("01234567", "01?34567", 8)
+    @test 3 == test_find_match_length("01234567", "012?4567", 8)
+    @test 4 == test_find_match_length("01234567", "0123?567", 8)
+    @test 5 == test_find_match_length("01234567", "01234?67", 8)
+    @test 6 == test_find_match_length("01234567", "012345?7", 8)
+    @test 7 == test_find_match_length("01234567", "0123456?", 8)
+    @test 7 == test_find_match_length("01234567", "0123456?", 7)
+    @test 7 == test_find_match_length("01234567!", "0123456??", 7)
+
+    # Hit s1_limit in 32-bit loop, hit s1_limit in single-character loop.
+    @test 10 == test_find_match_length("xxxxxxabcd", "xxxxxxabcd", 10)
+    @test 10 == test_find_match_length("xxxxxxabcd?", "xxxxxxabcd?", 10)
+
+    # NOTE: this test is from the original C++, but I think it's invalid for julia.
+    #   the strings it's comparing are only 12 characters - how can it have
+    #   a match length of 13? I suspect the test passes in C++ because it
+    #   reads 1 past the end of the string and ends up comparing the null
+    #   terminators of each, and includes that as part of the "match length".
+    @test_broken 13 == test_find_match_length("xxxxxxabcdef", "xxxxxxabcdef", 13)
+    # repeating the test with explicitly including a terminator in the strings
+    #   will test the same functionality as the above test is supposed to.
+    @test 13 == test_find_match_length("xxxxxxabcdef\0", "xxxxxxabcdef\0", 13)
+
+    # Same, but edge cases.
+    @test 12 == test_find_match_length("xxxxxx0123abc!", "xxxxxx0123abc!", 12)
+    @test 12 == test_find_match_length("xxxxxx0123abc!", "xxxxxx0123abc?", 12)
+
+    # Hit s1_limit in 32-bit loop, find a non-match in single-character loop.
+    @test 11 == test_find_match_length("xxxxxx0123abc", "xxxxxx0123axc", 13)
+
+    # Find non-match at once in first loop.
+    @test 6 == test_find_match_length("xxxxxx0123xxxxxxxx",
+                                   "xxxxxx?123xxxxxxxx", 18)
+    @test 7 ==test_find_match_length("xxxxxx0123xxxxxxxx",
+                                   "xxxxxx0?23xxxxxxxx", 18)
+    @test 8 == test_find_match_length("xxxxxx0123xxxxxxxx",
+                                   "xxxxxx0132xxxxxxxx", 18)
+    @test 9 == test_find_match_length("xxxxxx0123xxxxxxxx",
+                                   "xxxxxx012?xxxxxxxx", 18)
+
+    # Same, but edge cases.
+    @test 6 == test_find_match_length("xxxxxx0123", "xxxxxx?123", 10)
+    @test 7 == test_find_match_length("xxxxxx0123", "xxxxxx0?23", 10)
+    @test 8 == test_find_match_length("xxxxxx0123", "xxxxxx0132", 10)
+    @test 9 == test_find_match_length("xxxxxx0123", "xxxxxx012?", 10)
+
+    # Find non-match in first loop after one block.
+    @test 10 == test_find_match_length("xxxxxxabcd0123xx",
+                                    "xxxxxxabcd?123xx", 16)
+    @test 11 == test_find_match_length("xxxxxxabcd0123xx",
+                                    "xxxxxxabcd0?23xx", 16)
+    @test 12 == test_find_match_length("xxxxxxabcd0123xx",
+                                    "xxxxxxabcd0132xx", 16)
+    @test 13 == test_find_match_length("xxxxxxabcd0123xx",
+                                    "xxxxxxabcd012?xx", 16)
+
+    # Same, but edge cases.
+    @test 10 == test_find_match_length("xxxxxxabcd0123", "xxxxxxabcd?123", 14)
+    @test 11 == test_find_match_length("xxxxxxabcd0123", "xxxxxxabcd0?23", 14)
+    @test 12 == test_find_match_length("xxxxxxabcd0123", "xxxxxxabcd0132", 14)
+    @test 13 == test_find_match_length("xxxxxxabcd0123", "xxxxxxabcd012?", 14)
+
+end
