@@ -1,4 +1,5 @@
 
+# the maximum length in bytes of a varint32.
 const global K_MAX32 = 5
 
 """
