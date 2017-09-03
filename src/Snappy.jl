@@ -26,10 +26,10 @@ function compress(input::Vector{UInt8})
     outputindex = encode32!(output, 1, sourcelen)
     table = alloc_hashtable(sourcelen)
 
-    for i in 1:K_BLOCK_SIZE+1:sourcelen
+    for i in 0:K_BLOCK_SIZE:sourcelen
         fill!(table, 0xffff) # see compress_fragment! for explanation of using 0xffff
         outputindex = compress_fragment!(output, outputindex,
-            input, i, min(i+K_BLOCK_SIZE, endof(input)), table)
+            input, i+1, min(i+K_BLOCK_SIZE, endof(input)), table)
     end
 
     return resize!(output, outputindex-1)
