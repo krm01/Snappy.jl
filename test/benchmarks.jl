@@ -1,5 +1,5 @@
 include("../src/Snappy.jl")
-include("../src/libsnappy.jl")
+include("libsnappy.jl")
 
 
 using Snappy
