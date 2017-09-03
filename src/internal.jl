@@ -168,7 +168,7 @@ function compress_fragment!(output::Vector{UInt8}, outputindex::Integer, input::
                 ip = next_ip
                 cur_hash = next_hash
                 bytes_between_hash_lookups = skip >> 0x05
-                skip += 1
+                skip += bytes_between_hash_lookups
                 next_ip = ip + bytes_between_hash_lookups
 
                 # early exit if no match is found and we're nearing the end of the input
